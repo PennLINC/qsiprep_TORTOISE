@@ -22,6 +22,10 @@
 
 
 
+
+#include "itkResampleImageFilter.h"
+#include "itkBSplineInterpolateImageFunction.h"
+#include "itkIdentityTransform.h"
 #include "itkTransformFileWriter.h"
 #include "itkTransformFactory.h"
 #include "itkInvertDisplacementFieldImageFilterOkan.h"
@@ -175,12 +179,9 @@ TORTOISE::TORTOISE(int argc, char *argv[])
     }
 
 
-    if(parser->getDownInputName()=="")
+    this->proc_infos.resize(2);
+    {
         this->proc_infos.resize(1);
-    else
-        this->proc_infos.resize(2);
-
-    {        
         std::string up_name = this->parser->getUpInputName();
         fs::path up_path(up_name);
         std::string basename= fs::path(up_path).filename().string();
@@ -190,8 +191,17 @@ TORTOISE::TORTOISE(int argc, char *argv[])
         this->proc_infos[0].json_name= this->temp_proc_folder + std::string("/") + basename + std::string("_proc.json");
     }
 
-     if(parser->getDownInputName()!="")    //get the proc files names
-
+     if(parser->getDownInputName()=="")    //get the proc files names
+     {
+         std::string down_name = this->parser->getDownInputName();
+         fs::path down_path(down_name);
+         std::string basename= fs::path(down_path).filename().string();
+         basename=basename.substr(0,basename.rfind(".nii"));
+         this->proc_infos[1].nii_name= "";
+         this->proc_infos[1].bmtxt_name= "";
+         this->proc_infos[1].json_name= "";
+     }
+     else
      {
          std::string down_name = this->parser->getDownInputName();
          fs::path down_path(down_name);
@@ -251,7 +261,7 @@ void TORTOISE::FillReportJson()
 
 
     std::vector<std::string> tags={"up","down"};
-    for(int PE=0;PE<this->proc_infos.size();PE++)
+    for(int PE=0;PE<2;PE++)
     {
         if(this->proc_infos[PE].nii_name!="")
         {
@@ -517,8 +527,8 @@ void TORTOISE::Process()
     // Take care of little things normally done in the import step
     // in case we start from a later one.
 
-    my_jsons.resize(this->proc_infos.size());                          //read JSONs
-    for(int PE=0;PE<this->proc_infos.size();PE++)
+    my_jsons.resize(2);                          //read JSONs
+    for(int PE=0;PE<2;PE++)
     {
         if(this->proc_infos[PE].json_name!="")
         {
@@ -649,7 +659,7 @@ void TORTOISE::Process()
 
         std::chrono::steady_clock::time_point Tbegin = std::chrono::steady_clock::now();
 
-        for(int PE=0;PE<this->proc_infos.size();PE++)
+        for(int PE=0;PE<2;PE++)
         {
             double b0_noise_mean,b0_noise_std;
 
@@ -670,7 +680,7 @@ void TORTOISE::Process()
     {
         this->curr_step=STEPS::Gibbs;
         std::chrono::steady_clock::time_point Tbegin = std::chrono::steady_clock::now();
-        for(int PE=0;PE<this->proc_infos.size();PE++)
+        for(int PE=0;PE<2;PE++)
         {
             if(this->proc_infos[PE].nii_name!="")
                 GibbsUnringData(this->proc_infos[PE].nii_name,this->my_jsons[PE]["PartialFourier"],this->my_jsons[PE]["PhaseEncodingDirection"] );
@@ -683,7 +693,7 @@ void TORTOISE::Process()
     {
         this->curr_step=STEPS::MotionEddy;
         std::chrono::steady_clock::time_point Tbegin = std::chrono::steady_clock::now();
-        for(int PE=0;PE<this->proc_infos.size();PE++)
+        for(int PE=0;PE<2;PE++)
         {
             if(this->proc_infos[PE].nii_name!="")
             {
@@ -703,7 +713,7 @@ void TORTOISE::Process()
         if(drift_option!="off")
         {
              std::chrono::steady_clock::time_point Tbegin = std::chrono::steady_clock::now();
-            for(int PE=0;PE<this->proc_infos.size();PE++)
+            for(int PE=0;PE<2;PE++)
             {
                 (*stream)<<"Drift correcting dataset: "<<PE<<std::endl;
                 if(this->proc_infos[PE].nii_name!="")
@@ -719,7 +729,7 @@ void TORTOISE::Process()
         }
     }
     //re read jsons after DIFFPREP changes it.
-    for(int PE=0;PE<this->proc_infos.size();PE++)
+    for(int PE=0;PE<2;PE++)
     {
         if(this->proc_infos[PE].json_name!="")
         {
@@ -820,7 +830,7 @@ void TORTOISE::Process()
         {
             (*stream)<<"Denoising option was set for only correction, not final data. Copying the original data one last time."<<std::endl;
             CheckAndCopyInputData();
-            for(int PE=0;PE<this->proc_infos.size();PE++)
+            for(int PE=0;PE<2;PE++)
             {
                 if(this->proc_infos[PE].nii_name!="")
                 {
@@ -833,21 +843,7 @@ void TORTOISE::Process()
 
 
         (*stream)<<"Writing final outputs..."<<std::endl;
-
-        std::string up_name=this->proc_infos[0].nii_name;
-        auto up_json=this->my_jsons[0];
-
-        std::string down_name="";
-        json down_json;
-        if(this->proc_infos.size()==2)
-        {
-            down_name=this->proc_infos[1].nii_name;
-            down_json=this->my_jsons[1];
-        }
-
-
-
-        FINALDATA my_final_data_generator(up_name,up_json,down_name,down_json);
+        FINALDATA my_final_data_generator(this->proc_infos[0].nii_name,this->my_jsons[0],this->proc_infos[1].nii_name,this->my_jsons[1]);
         my_final_data_generator.SetTempFolder(this->temp_proc_folder);
         my_final_data_generator.SetParser(this->parser);
         my_final_data_generator.SetOutputName(this->output_name);
@@ -1081,6 +1077,58 @@ void TORTOISE::AlignB0ToReorientation()
 
     if(target_img)
     {
+
+        typedef itk::ResampleImageFilter<ImageType3D, ImageType3D> ResamplerType;
+        {
+            ImageType3D::DirectionType dir = target_img->GetDirection();
+            double sm=0;
+            for(int r=0;r<3;r++)
+                for(int c=0;c<3;c++)
+                {
+                    if(fabs(dir(r,c))<0.5)
+                    {
+                        sm+=fabs(dir(r,c));
+                        dir(r,c)=0;
+                    }
+                    else
+                    {
+                        if(dir(r,c)>0)
+                            dir(r,c)=1;
+                        else
+                            dir(r,c)=-1;
+                    }
+                }
+
+
+            if(sm> 1E-4)  //oblique
+            {
+                ImageType3D::Pointer temp_img = ImageType3D::New();
+                temp_img->SetRegions(target_img->GetLargestPossibleRegion());
+                temp_img->SetSpacing(target_img->GetSpacing());
+                temp_img->SetOrigin(target_img->GetOrigin());
+                temp_img->SetDirection(dir);
+
+                typedef itk::BSplineInterpolateImageFunction<ImageType3D, double, double> InterpolatorType;
+                InterpolatorType::Pointer interp = InterpolatorType::New();
+                interp->SetSplineOrder(3);
+
+                typedef itk::IdentityTransform<double, 3> TransformType;
+                TransformType::Pointer id_trans= TransformType::New();
+                id_trans->SetIdentity();
+
+
+                ResamplerType::Pointer resampler= ResamplerType::New();
+                resampler->SetTransform(id_trans);
+                resampler->SetInput(target_img);
+                resampler->SetInterpolator(interp);
+                resampler->SetOutputParametersFromImage(temp_img);
+                resampler->Update();
+                target_img= resampler->GetOutput();
+            }
+        }
+
+
+
         ImageType3D::Pointer b0_img=nullptr;
 
         {
@@ -1107,105 +1155,199 @@ void TORTOISE::AlignB0ToReorientation()
             b0_img= read_3D_volume_from_4D(this->proc_infos[0].nii_name,0);
 
 
-        RigidTransformType::Pointer rigid_trans1= RigidRegisterImagesEuler( target_img,  b0_img, "CC",parser->getRigidLR());
-        RigidTransformType::Pointer rigid_trans2= RigidRegisterImagesEuler( target_img,  b0_img, "MI",parser->getRigidLR());
-
-        auto params1= rigid_trans1->GetParameters();
-        auto params2= rigid_trans2->GetParameters();
-        auto p1=params1-params2;
-
-        double diff=0;
-        diff+= p1[0]*p1[0] + p1[1]*p1[1] +  p1[2]*p1[2] +
-               p1[3]*p1[3]/400. + p1[4]*p1[4]/400. + p1[5]*p1[5]/400. ;
-
-        RigidTransformType::Pointer rigid_trans=nullptr;
-        (*stream)<<"R1: "<< params1<<std::endl;
-        (*stream)<<"R2: "<< params2<<std::endl;
-        (*stream)<<"MI vs CC diff: "<< diff<<std::endl;
-
-
-        if(diff<0.005)
-            b0_to_str_trans=rigid_trans2;
-        else
+        if(reorientation_name=="")
         {
-            (*stream)<<"Could not compute the rigid transformation from the structural imageto b=0 image... Starting multistart.... This could take a while"<<std::endl;
-            (*stream)<<"Better be safe than sorry, right?"<<std::endl;
+            RigidTransformType::Pointer rigid_trans1= RigidRegisterImagesEuler( target_img,  b0_img, "CC",parser->getRigidLR());
+            RigidTransformType::Pointer rigid_trans2= RigidRegisterImagesEuler( target_img,  b0_img, "MI",parser->getRigidLR());
 
-            RigidTransformType::Pointer rigid_trans1a= RigidRegisterImagesEuler( b0_img, target_img,  "CC",parser->getRigidLR());
-            RigidTransformType::ParametersType b1= rigid_trans1a->GetParameters();
+            auto params1= rigid_trans1->GetParameters();
+            auto params2= rigid_trans2->GetParameters();
+            auto p1=params1-params2;
 
-            p1[0]= params1[0]+ b1[0];
-            p1[1]= params1[1]+ b1[1];
-            p1[2]= params1[2]+ b1[2];
-            double diff1= p1[0]*p1[0] + p1[1]*p1[1] +  p1[2]*p1[2] ;
+            double diff=0;
+            diff+= p1[0]*p1[0] + p1[1]*p1[1] +  p1[2]*p1[2] +
+                    p1[3]*p1[3]/400. + p1[4]*p1[4]/400. + p1[5]*p1[5]/400. ;
+
+            RigidTransformType::Pointer rigid_trans=nullptr;
+            (*stream)<<"R1: "<< params1<<std::endl;
+            (*stream)<<"R2: "<< params2<<std::endl;
+            (*stream)<<"CC vs MI diff: "<< diff<<std::endl;
 
 
-            RigidTransformType::Pointer rigid_trans2a= RigidRegisterImagesEuler( b0_img, target_img, "MI",parser->getRigidLR());
-            RigidTransformType::ParametersType b2= rigid_trans2a->GetParameters();
-
-            p1[0]= params2[0]+ b2[0];
-            p1[1]= params2[1]+ b2[1];
-            p1[2]= params2[2]+ b2[2];            
-            double diff2= p1[0]*p1[0] + p1[1]*p1[1] +  p1[2]*p1[2] ;
-            (*stream)<< "diff1 "<<diff1 << " diff2 " <<diff2 <<std::endl;
-
-            (*stream)<< "Trans CC F" << rigid_trans1->GetParameters()<<std::endl;
-            (*stream)<< "Trans CC B" << rigid_trans1a->GetParameters()<<std::endl;
-            (*stream)<< "Trans MI F" << rigid_trans2->GetParameters()<<std::endl;
-            (*stream)<< "Trans MI B" << rigid_trans2a->GetParameters()<<std::endl;
-
-            std::string new_metric_type="MI";
-            if(diff1< diff2)
-            {
-                (*stream)<< "CC was determined to be more robust than MI. Switching..."<<std::endl;
-                new_metric_type="CC";
-            }
-
-            if(diff1<0.001)
-            {
-                b1[0]= (params1[0] - b1[0])/2.;
-                b1[1]= (params1[1] - b1[1])/2.;
-                b1[2]= (params1[2] - b1[2])/2.;
-                b1[3]= (params1[3] );
-                b1[4]= (params1[4] );
-                b1[5]= (params1[5] );
-                rigid_trans1->SetParameters(b1);
-
-                b0_to_str_trans= RigidRegisterImagesEuler( target_img,  b0_img, "CC",parser->getRigidLR(),true, rigid_trans1);
-            }
+            if(diff<0.005)
+                b0_to_str_trans=rigid_trans2;
             else
             {
-                if(diff2<0.001)
-                {
-                    b2[0]= (params2[0] - b2[0])/2.;
-                    b2[1]= (params2[1] - b2[1])/2.;
-                    b2[2]= (params2[2] - b2[2])/2.;
-                    b2[3]= (params2[3] );
-                    b2[4]= (params2[4] );
-                    b2[5]= (params2[5] );
-                    rigid_trans2->SetParameters(b2);
+                (*stream)<<"Could not compute the rigid transformation from the structural imageto b=0 image... Starting multistart.... This could take a while"<<std::endl;
+                (*stream)<<"Better be safe than sorry, right?"<<std::endl;
 
-                    b0_to_str_trans= RigidRegisterImagesEuler( target_img,  b0_img, "MI",parser->getRigidLR(),true,rigid_trans2);
+                RigidTransformType::Pointer rigid_trans1a= RigidRegisterImagesEuler( b0_img, target_img,  "CC",parser->getRigidLR());
+                RigidTransformType::ParametersType b1= rigid_trans1a->GetParameters();
+
+                p1[0]= params1[0]+ b1[0];
+                p1[1]= params1[1]+ b1[1];
+                p1[2]= params1[2]+ b1[2];
+                double diff1= p1[0]*p1[0] + p1[1]*p1[1] +  p1[2]*p1[2] ;
+
+
+                RigidTransformType::Pointer rigid_trans2a= RigidRegisterImagesEuler( b0_img, target_img, "MI",parser->getRigidLR());
+                RigidTransformType::ParametersType b2= rigid_trans2a->GetParameters();
+
+                p1[0]= params2[0]+ b2[0];
+                p1[1]= params2[1]+ b2[1];
+                p1[2]= params2[2]+ b2[2];
+                double diff2= p1[0]*p1[0] + p1[1]*p1[1] +  p1[2]*p1[2] ;
+                (*stream)<< "diff1 "<<diff1 << " diff2 " <<diff2 <<std::endl;
+
+                (*stream)<< "Trans CC F" << rigid_trans1->GetParameters()<<std::endl;
+                (*stream)<< "Trans CC B" << rigid_trans1a->GetParameters()<<std::endl;
+                (*stream)<< "Trans MI F" << rigid_trans2->GetParameters()<<std::endl;
+                (*stream)<< "Trans MI B" << rigid_trans2a->GetParameters()<<std::endl;
+
+                std::string new_metric_type="MI";
+                if(diff1< diff2)
+                {
+                    (*stream)<< "CC was determined to be more robust than MI. Switching..."<<std::endl;
+                    new_metric_type="CC";
+                }
+
+                if(diff1< diff2)
+                {
+                    if(diff1<0.001)
+                    {
+                        b1[0]= (params1[0] - b1[0])/2.;
+                        b1[1]= (params1[1] - b1[1])/2.;
+                        b1[2]= (params1[2] - b1[2])/2.;
+                        b1[3]= (params1[3] );
+                        b1[4]= (params1[4] );
+                        b1[5]= (params1[5] );
+                        rigid_trans1->SetParameters(b1);
+
+                        b0_to_str_trans= RigidRegisterImagesEuler( target_img,  b0_img, "CC",parser->getRigidLR(),true, rigid_trans1);
+                    }
+                    else
+                    {
+                        if(diff2<0.001)
+                        {
+                            b2[0]= (params2[0] - b2[0])/2.;
+                            b2[1]= (params2[1] - b2[1])/2.;
+                            b2[2]= (params2[2] - b2[2])/2.;
+                            b2[3]= (params2[3] );
+                            b2[4]= (params2[4] );
+                            b2[5]= (params2[5] );
+                            rigid_trans2->SetParameters(b2);
+
+                            b0_to_str_trans= RigidRegisterImagesEuler( target_img,  b0_img, "MI",parser->getRigidLR(),true,rigid_trans2);
+                        }
+                        else
+                        {
+
+                            std::vector<float> new_res; new_res.resize(3);
+                            new_res[0]= b0_img->GetSpacing()[0] * 2;
+                            new_res[1]= b0_img->GetSpacing()[1] * 2;
+                            new_res[2]= b0_img->GetSpacing()[2] * 2;
+                            std::vector<float> dummy;
+                            ImageType3D::Pointer b02= resample_3D_image(b0_img,new_res,dummy,"Linear");
+                            new_res[0]= target_img->GetSpacing()[0] * 2;
+                            new_res[1]= target_img->GetSpacing()[1] * 2;
+                            new_res[2]= target_img->GetSpacing()[2] * 2;
+                            ImageType3D::Pointer str2= resample_3D_image(target_img,new_res,dummy,"Linear");
+
+                            rigid_trans1=MultiStartRigidSearch(str2,b02,new_metric_type);
+                            b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,rigid_trans1);
+                        }
+                    }
                 }
                 else
                 {
+                    if(diff2<0.001)
+                    {
+                        b2[0]= (params2[0] - b2[0])/2.;
+                        b2[1]= (params2[1] - b2[1])/2.;
+                        b2[2]= (params2[2] - b2[2])/2.;
+                        b2[3]= (params2[3] );
+                        b2[4]= (params2[4] );
+                        b2[5]= (params2[5] );
+                        rigid_trans2->SetParameters(b2);
 
-                    std::vector<float> new_res; new_res.resize(3);
-                    new_res[0]= b0_img->GetSpacing()[0] * 2;
-                    new_res[1]= b0_img->GetSpacing()[1] * 2;
-                    new_res[2]= b0_img->GetSpacing()[2] * 2;
-                    std::vector<float> dummy;
-                    ImageType3D::Pointer b02= resample_3D_image(b0_img,new_res,dummy,"Linear");
-                    new_res[0]= target_img->GetSpacing()[0] * 2;
-                    new_res[1]= target_img->GetSpacing()[1] * 2;
-                    new_res[2]= target_img->GetSpacing()[2] * 2;
-                    ImageType3D::Pointer str2= resample_3D_image(target_img,new_res,dummy,"Linear");
+                        b0_to_str_trans= RigidRegisterImagesEuler( target_img,  b0_img, "MI",parser->getRigidLR(),true,rigid_trans2);
+                    }
+                    else
+                    {
+                        if(diff1<0.001)
+                        {
+                            b1[0]= (params1[0] - b1[0])/2.;
+                            b1[1]= (params1[1] - b1[1])/2.;
+                            b1[2]= (params1[2] - b1[2])/2.;
+                            b1[3]= (params1[3] );
+                            b1[4]= (params1[4] );
+                            b1[5]= (params1[5] );
+                            rigid_trans1->SetParameters(b1);
 
-                    rigid_trans1=MultiStartRigidSearch(str2,b02,new_metric_type);
-                    b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,rigid_trans1);
+                            b0_to_str_trans= RigidRegisterImagesEuler( target_img,  b0_img, "CC",parser->getRigidLR(),true, rigid_trans1);
+                        }
+
+                        else
+                        {
+                            std::vector<float> new_res; new_res.resize(3);
+                            new_res[0]= b0_img->GetSpacing()[0] * 2;
+                            new_res[1]= b0_img->GetSpacing()[1] * 2;
+                            new_res[2]= b0_img->GetSpacing()[2] * 2;
+                            std::vector<float> dummy;
+                            ImageType3D::Pointer b02= resample_3D_image(b0_img,new_res,dummy,"Linear");
+                            new_res[0]= target_img->GetSpacing()[0] * 2;
+                            new_res[1]= target_img->GetSpacing()[1] * 2;
+                            new_res[2]= target_img->GetSpacing()[2] * 2;
+                            ImageType3D::Pointer str2= resample_3D_image(target_img,new_res,dummy,"Linear");
+
+                            rigid_trans1=MultiStartRigidSearch(str2,b02,new_metric_type);
+                            b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,rigid_trans1);
+                        }
+                    }
                 }
             }
+        } //if no reorientation
+        else
+        {
+            RigidTransformType::Pointer rigid_trans2= RigidRegisterImagesEuler( target_img,  b0_img, "MI",parser->getRigidLR());
+            RigidTransformType::Pointer rigid_trans2a= RigidRegisterImagesEuler( b0_img, target_img, "MI",parser->getRigidLR());
+            RigidTransformType::ParametersType params= rigid_trans2->GetParameters();
+            RigidTransformType::ParametersType b2= rigid_trans2a->GetParameters();
+
+            double p1[3];
+            p1[0]= params[0]+ b2[0];
+            p1[1]= params[1]+ b2[1];
+            p1[2]= params[2]+ b2[2];
+            double diff= p1[0]*p1[0] + p1[1]*p1[1] +  p1[2]*p1[2] ;
+            (*stream)<< " diff " <<diff <<std::endl;
+
+            (*stream)<< "Trans MI F" << rigid_trans2->GetParameters()<<std::endl;
+            (*stream)<< "Trans MI B" << rigid_trans2a->GetParameters()<<std::endl;
+
+            if(diff<0.005)
+                b0_to_str_trans=rigid_trans2;
+            else
+            {
+                (*stream)<<"Could not compute the rigid transformation from the structural imageto b=0 image... Starting multistart.... This could take a while"<<std::endl;
+                (*stream)<<"Better be safe than sorry, right?"<<std::endl;
+
+                std::vector<float> new_res; new_res.resize(3);
+                new_res[0]= b0_img->GetSpacing()[0] * 2;
+                new_res[1]= b0_img->GetSpacing()[1] * 2;
+                new_res[2]= b0_img->GetSpacing()[2] * 2;
+                std::vector<float> dummy;
+                ImageType3D::Pointer b02= resample_3D_image(b0_img,new_res,dummy,"Linear");
+                new_res[0]= target_img->GetSpacing()[0] * 2;
+                new_res[1]= target_img->GetSpacing()[1] * 2;
+                new_res[2]= target_img->GetSpacing()[2] * 2;
+                ImageType3D::Pointer str2= resample_3D_image(target_img,new_res,dummy,"Linear");
+
+                std::string new_metric_type="MI";
+                rigid_trans2=MultiStartRigidSearch(str2,b02,new_metric_type);
+                b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,rigid_trans2);
+            }
         }
+
         (*stream)<<"Final transformation: " << b0_to_str_trans->GetParameters()<<std::endl;
 
     }
@@ -1440,7 +1582,7 @@ void TORTOISE::CheckAndCopyInputData()
     std::vector<std::string> bval_names={parser->getUpBvalName(),parser->getDownBvalName()};
     std::vector<std::string> bvec_names={parser->getUpBvecName(),parser->getDownBvecName()};
 
-    for(int PE=0;PE<this->proc_infos.size();PE++)  //for both up and down data, do the following
+    for(int PE=0;PE<2;PE++)  //for both up and down data, do the following
     {
         std::string input_name=input_names[PE];
         if(input_name!="")
