@@ -190,17 +190,8 @@ TORTOISE::TORTOISE(int argc, char *argv[])
         this->proc_infos[0].json_name= this->temp_proc_folder + std::string("/") + basename + std::string("_proc.json");
     }
 
-     if(parser->getDownInputName()=="")    //get the proc files names
-     {
-         std::string down_name = this->parser->getDownInputName();
-         fs::path down_path(down_name);
-         std::string basename= fs::path(down_path).filename().string();
-         basename=basename.substr(0,basename.rfind(".nii"));
-         this->proc_infos[1].nii_name= "";
-         this->proc_infos[1].bmtxt_name= "";
-         this->proc_infos[1].json_name= "";
-     }
-     else
+     if(parser->getDownInputName()!="")    //get the proc files names
+
      {
          std::string down_name = this->parser->getDownInputName();
          fs::path down_path(down_name);
@@ -260,7 +251,7 @@ void TORTOISE::FillReportJson()
 
 
     std::vector<std::string> tags={"up","down"};
-    for(int PE=0;PE<2;PE++)
+    for(int PE=0;PE<this->proc_infos.size();PE++)
     {
         if(this->proc_infos[PE].nii_name!="")
         {
@@ -526,8 +517,8 @@ void TORTOISE::Process()
     // Take care of little things normally done in the import step
     // in case we start from a later one.
 
-    my_jsons.resize(2);                          //read JSONs
-    for(int PE=0;PE<2;PE++)
+    my_jsons.resize(this->proc_infos.size());                          //read JSONs
+    for(int PE=0;PE<this->proc_infos.size();PE++)
     {
         if(this->proc_infos[PE].json_name!="")
         {
@@ -658,7 +649,7 @@ void TORTOISE::Process()
 
         std::chrono::steady_clock::time_point Tbegin = std::chrono::steady_clock::now();
 
-        for(int PE=0;PE<2;PE++)
+        for(int PE=0;PE<this->proc_infos.size();PE++)
         {
             double b0_noise_mean,b0_noise_std;
 
@@ -679,7 +670,7 @@ void TORTOISE::Process()
     {
         this->curr_step=STEPS::Gibbs;
         std::chrono::steady_clock::time_point Tbegin = std::chrono::steady_clock::now();
-        for(int PE=0;PE<2;PE++)
+        for(int PE=0;PE<this->proc_infos.size();PE++)
         {
             if(this->proc_infos[PE].nii_name!="")
                 GibbsUnringData(this->proc_infos[PE].nii_name,this->my_jsons[PE]["PartialFourier"],this->my_jsons[PE]["PhaseEncodingDirection"] );
@@ -692,7 +683,7 @@ void TORTOISE::Process()
     {
         this->curr_step=STEPS::MotionEddy;
         std::chrono::steady_clock::time_point Tbegin = std::chrono::steady_clock::now();
-        for(int PE=0;PE<2;PE++)
+        for(int PE=0;PE<this->proc_infos.size();PE++)
         {
             if(this->proc_infos[PE].nii_name!="")
             {
@@ -712,7 +703,7 @@ void TORTOISE::Process()
         if(drift_option!="off")
         {
              std::chrono::steady_clock::time_point Tbegin = std::chrono::steady_clock::now();
-            for(int PE=0;PE<2;PE++)
+            for(int PE=0;PE<this->proc_infos.size();PE++)
             {
                 (*stream)<<"Drift correcting dataset: "<<PE<<std::endl;
                 if(this->proc_infos[PE].nii_name!="")
@@ -728,7 +719,7 @@ void TORTOISE::Process()
         }
     }
     //re read jsons after DIFFPREP changes it.
-    for(int PE=0;PE<2;PE++)
+    for(int PE=0;PE<this->proc_infos.size();PE++)
     {
         if(this->proc_infos[PE].json_name!="")
         {
@@ -829,7 +820,7 @@ void TORTOISE::Process()
         {
             (*stream)<<"Denoising option was set for only correction, not final data. Copying the original data one last time."<<std::endl;
             CheckAndCopyInputData();
-            for(int PE=0;PE<2;PE++)
+            for(int PE=0;PE<this->proc_infos.size();PE++)
             {
                 if(this->proc_infos[PE].nii_name!="")
                 {
@@ -842,7 +833,21 @@ void TORTOISE::Process()
 
 
         (*stream)<<"Writing final outputs..."<<std::endl;
-        FINALDATA my_final_data_generator(this->proc_infos[0].nii_name,this->my_jsons[0],this->proc_infos[1].nii_name,this->my_jsons[1]);
+
+        std::string up_name=this->proc_infos[0].nii_name;
+        auto up_json=this->my_jsons[0];
+
+        std::string down_name="";
+        json down_json;
+        if(this->proc_infos.size()==2)
+        {
+            down_name=this->proc_infos[1].nii_name;
+            down_json=this->my_jsons[1];
+        }
+
+
+
+        FINALDATA my_final_data_generator(up_name,up_json,down_name,down_json);
         my_final_data_generator.SetTempFolder(this->temp_proc_folder);
         my_final_data_generator.SetParser(this->parser);
         my_final_data_generator.SetOutputName(this->output_name);
@@ -1435,7 +1440,7 @@ void TORTOISE::CheckAndCopyInputData()
     std::vector<std::string> bval_names={parser->getUpBvalName(),parser->getDownBvalName()};
     std::vector<std::string> bvec_names={parser->getUpBvecName(),parser->getDownBvecName()};
 
-    for(int PE=0;PE<2;PE++)  //for both up and down data, do the following
+    for(int PE=0;PE<this->proc_infos.size();PE++)  //for both up and down data, do the following
     {
         std::string input_name=input_names[PE];
         if(input_name!="")

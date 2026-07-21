@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.20)
 PROJECT(TORTOISEV4  )
 
 SET(USEOPENMP 1)
-  # SET(CMAKE_BUILD_TYPE Debug)
-  # SET(ISDEBUG 1)
+ #  SET(CMAKE_BUILD_TYPE Debug)
+ #  SET(ISDEBUG 1)
 
 
 
@@ -544,6 +544,10 @@ target_link_libraries(CombineTransformationsWithReference  ${ITK_LIBRARIES} ${Bo
 
 #add_executable(RigidPhaseScaleRegister  ../src/tools/RigidPhaseScaleRegister/RigidPhaseScaleRegister.cxx ../src/main/rigid_register_images.cxx  ${SOURCES})
 #target_link_libraries(RigidPhaseScaleRegister ${ITK_LIBRARIES} ${Boost_LIBRARIES} -static-libgcc -static-libstdc++ )
+
+
+add_executable(JoanahRegisterAlongAxes  ../src/tools/JoanahUpDownB0Transformations/JoanahRegisterAlongAxes.cxx ../src/main/register_dwi_to_b0.cxx   ../src/tools/ResampleDWIs/resample_dwis.cxx ${SOURCES})
+target_link_libraries(JoanahRegisterAlongAxes ${ITK_LIBRARIES} ${Boost_LIBRARIES} -static-libgcc -static-libstdc++ )
 
 
 IF(USE_VTK)
