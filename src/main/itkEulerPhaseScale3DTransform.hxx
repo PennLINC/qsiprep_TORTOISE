@@ -18,6 +18,8 @@
 #ifndef itkEulerPhaseScale3DTransform_hxx
 #define itkEulerPhaseScale3DTransform_hxx
 
+#include "itk_qsiprep_compat.h"
+
 
 namespace itk
 {

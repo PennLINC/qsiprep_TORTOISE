@@ -18,6 +18,8 @@
 #ifndef itkEulerPhaseScale3DTransform_h
 #define itkEulerPhaseScale3DTransform_h
 
+#include "itk_qsiprep_compat.h"
+
 #include <iostream>
 #include "itkRigid3DTransform.h"
 

@@ -18,6 +18,8 @@
 #ifndef itkVectorGradientAnisotropicDiffusionImageFilterOkan_h
 #define itkVectorGradientAnisotropicDiffusionImageFilterOkan_h
 
+#include "../../main/itk_qsiprep_compat.h"
+
 #include "itkMacro.h"
 #include "itkAnisotropicDiffusionImageFilter.h"
 #include "itkVectorGradientNDAnisotropicDiffusionFunctionOkan.h"

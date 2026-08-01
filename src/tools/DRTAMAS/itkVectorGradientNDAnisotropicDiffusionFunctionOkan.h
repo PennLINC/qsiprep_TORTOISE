@@ -18,6 +18,8 @@
 #ifndef itkVectorGradientNDAnisotropicDiffusionFunctionOkan_h
 #define itkVectorGradientNDAnisotropicDiffusionFunctionOkan_h
 
+#include "../../main/itk_qsiprep_compat.h"
+
 #include "itkVectorAnisotropicDiffusionFunction.h"
 #include "itkNeighborhoodAlgorithm.h"
 #include "itkVectorNeighborhoodInnerProduct.h"
