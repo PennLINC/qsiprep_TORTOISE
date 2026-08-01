@@ -24,6 +24,7 @@
 #include "itkBSplineInterpolateImageFunction.h"
 
 #include "DRBUDDI_Diffeo.h"
+#include "../tools/EstimateMAPMRI/MAPMRIModel.h"
 
 
 
@@ -399,6 +400,103 @@ void DRBUDDIBase::CreateCorrectionImage(std::string nii_filename,ImageType3D::Po
      }
 
 
+
+     // Non-shelled (CS-DSI) data: the direct tensor fit below is invalid, so fit
+     // MAPMRI and synthesize a tensor-fittable shell to derive b=0/FA from.
+     // Called once per phase-encoding direction by DRBUDDI::Step0_CreateImages().
+     float synth_bval = RegistrationSettings::get().getValue<float>("DRBUDDI_synth_shell_bval");
+     if(synth_bval > 0)
+     {
+         int ndirs = RegistrationSettings::get().getValue<int>("DRBUDDI_synth_shell_ndirs");
+         if(ndirs < 6)
+             ndirs = 30;
+         (*stream)<<"Synthesizing a b="<<synth_bval<<" shell ("<<ndirs<<" directions) with MAPMRI for the DRBUDDI target..."<<std::endl;
+
+         ImageType3D::Pointer mask_img = main_mask_img ? main_mask_img : create_mask(final_data[0]);
+
+         // The MAPMRI fit needs a DTI initializer built from the low-b volumes
+         // only; using the whole grid is the very thing we are avoiding.
+         std::vector<int> dt_indices, all_indices;
+         for(int v=0;v<bvals.size();v++)
+         {
+             all_indices.push_back(v);
+             if(bvals[v] <= 1.05*synth_bval)
+                 dt_indices.push_back(v);
+         }
+         if(dt_indices.size() < 7)
+             dt_indices = all_indices;
+
+         float small_delta = RegistrationSettings::get().getValue<float>("small_delta");
+         float big_delta   = RegistrationSettings::get().getValue<float>("big_delta");
+         if(small_delta <= 0 || big_delta <= 0)
+         {
+             // DIFFPREP's fallback when the JSON carries no timings.
+             double max_bval = bvals.max_value();
+             double gyro = 267.51532*1E6;
+             double G = 40*1E-3; G *= 2;
+             double temp = max_bval/gyro/gyro/G/G/2.*1E6;
+             small_delta = pow(temp,1./3.)*1000.;
+             big_delta   = small_delta*3;
+             (*stream)<<"heuristic deltas "<<small_delta<<"/"<<big_delta<<" ms"<<std::endl;
+         }
+
+         MAPMRIModel mapmri;
+         mapmri.SetMAPMRIDegree(4);
+         mapmri.SetBmatrix(Bmatrix);
+         mapmri.SetDWIData(final_data);
+         mapmri.SetMaskImage(mask_img);
+         mapmri.SetVolIndicesForFitting(all_indices);
+         mapmri.SetDTIIndices(dt_indices);
+         mapmri.SetSmallDelta(small_delta);
+         mapmri.SetBigDelta(big_delta);
+         mapmri.PerformFitting();
+
+         // A deterministic, near-uniform set of directions (golden-angle spiral),
+         // plus one b=0, forms a clean single-shell acquisition.
+         std::vector<ImageType3D::Pointer> synth_data;
+         vnl_matrix<double> synth_bmat(ndirs+1, 6, 0.0);
+
+         vnl_vector<double> b0row(6, 0.0);
+         synth_data.push_back(mapmri.SynthesizeDWI(b0row));
+
+         const double ga = M_PI * (3.0 - sqrt(5.0));
+         for(int d=0; d<ndirs; d++)
+         {
+             double z = 1.0 - 2.0*(d + 0.5)/ndirs;
+             double r = sqrt(std::max(0.0, 1.0 - z*z));
+             double th = ga * d;
+             double gx = r*cos(th), gy = r*sin(th), gz = z;
+
+             vnl_vector<double> row(6, 0.0);
+             row[0]= synth_bval*gx*gx;   row[1]= 2*synth_bval*gx*gy;
+             row[2]= 2*synth_bval*gx*gz; row[3]= synth_bval*gy*gy;
+             row[4]= 2*synth_bval*gy*gz; row[5]= synth_bval*gz*gz;
+             synth_bmat.set_row(d+1, row);
+             synth_data.push_back(mapmri.SynthesizeDWI(row));
+         }
+
+         std::vector<int> synth_fit_indices;
+         for(int v=0;v<(int)synth_data.size();v++)
+             synth_fit_indices.push_back(v);
+
+         std::vector<ImageType3DBool::Pointer> no_inclusion;
+         ImageType3D::Pointer synth_A0=nullptr;
+         DTImageType::Pointer synth_dt = EstimateTensorWLLS_sub_nomm(synth_data, synth_bmat, synth_fit_indices, synth_A0, nullptr, no_inclusion);
+         FA_img = compute_fa_map(synth_dt);
+
+         itk::ImageRegionIteratorWithIndex<ImageType3D> sit(synth_A0, synth_A0->GetLargestPossibleRegion());
+         for(sit.GoToBegin(); !sit.IsAtEnd(); ++sit)
+         {
+             ImageType3D::IndexType ind3 = sit.GetIndex();
+             float val = sit.Get();
+             if(val!=val || val<0)
+                 sit.Set(0);
+             if(mask_img->GetPixel(ind3)==0)
+                 FA_img->SetPixel(ind3,0);
+         }
+         b0_img = synth_A0;
+         return;
+     }
 
      if(use_tensor)
      {

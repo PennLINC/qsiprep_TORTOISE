@@ -183,7 +183,7 @@ ELSE(USECUDA)
     target_link_libraries(TORTOISEProcess Eigen3::Eigen ${ITK_LIBRARIES}  ${Boost_LIBRARIES} ${CMAKE_CURRENT_BINARY_DIR}/../external_libraries/bet/Linux/libbetokan.a -lz fftw3 )
 
 
-     add_executable(DRBUDDI ../src/tools/DRBUDDI/DRBUDDI_main.cxx ../src/tools/DRBUDDI/DRBUDDI_parserBase.cxx ../src/tools/EstimateTensor/DTIModel.cxx   ../src/main/DRBUDDI.cxx ../src/main/DRBUDDIBase.cxx   ../src/main/run_drbuddi_stage.cxx ../src/main/DRBUDDI_Diffeo.cxx   ../src/tools/ResampleDWIs/resample_dwis.cxx ../src/main/rigid_register_images.cxx ../src/tools/EstimateTensor/estimate_tensor_wlls.cxx ../src/main/create_mask.cxx  ../src/main/drbuddi_image_utilities.cxx  ${SOURCES} )
+     add_executable(DRBUDDI ../src/tools/DRBUDDI/DRBUDDI_main.cxx ../src/tools/DRBUDDI/DRBUDDI_parserBase.cxx ../src/tools/EstimateTensor/DTIModel.cxx ../src/tools/EstimateMAPMRI/MAPMRIModel.cxx   ../src/main/DRBUDDI.cxx ../src/main/DRBUDDIBase.cxx   ../src/main/run_drbuddi_stage.cxx ../src/main/DRBUDDI_Diffeo.cxx   ../src/tools/ResampleDWIs/resample_dwis.cxx ../src/main/rigid_register_images.cxx ../src/tools/EstimateTensor/estimate_tensor_wlls.cxx ../src/main/create_mask.cxx  ../src/main/drbuddi_image_utilities.cxx  ${SOURCES} )
      target_link_libraries(DRBUDDI  ${ITK_LIBRARIES}  ${Boost_LIBRARIES} ${CMAKE_CURRENT_BINARY_DIR}/../external_libraries/bet/Linux/libbetokan.a -lz fftw3 )
      target_compile_definitions(DRBUDDI PUBLIC -DDRBUDDIALONE)
 

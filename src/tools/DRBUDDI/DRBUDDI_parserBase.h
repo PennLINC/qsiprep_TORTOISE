@@ -34,6 +34,8 @@ public:
     std::string  getRigidMetricType();
     float  getRigidLR();
     int getDWIBvalue();
+    float getSynthShellBval();
+    int getSynthShellNdirs();
 
     std::string GetInitialMINV();
     std::string GetInitialFINV();

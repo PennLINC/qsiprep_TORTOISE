@@ -238,6 +238,22 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
+        std::string description = std::string("For non-shelled (e.g. CS-DSI) data, the tensor fit used to build DRBUDDI's b=0/FA registration target is invalid. When this is > 0, MAPMRI is fit to the data and a single shell is synthesized at this b-value, from which b=0 and FA are derived. Done separately per phase-encoding direction. Float. Default:0 (off, use the direct tensor fit).")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "DRBUDDI_synth_shell_bval");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
+        std::string description = std::string("Number of equally distributed directions in the shell synthesized by DRBUDDI_synth_shell_bval. Int. Default:30")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "DRBUDDI_synth_shell_ndirs");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
         std::string description = std::string("Flag to estimate learning rate at every iteration. Makes DRBUDDI slower but better results. Boolean. Default:0")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "DRBUDDI_estimate_LR_per_iteration");
@@ -575,6 +591,24 @@ float  DRBUDDI_PARSERBASE::getRigidLR()
         return 0.35;
 
 }
+float  DRBUDDI_PARSERBASE::getSynthShellBval()
+{
+    OptionType::Pointer option = this->GetOption( "DRBUDDI_synth_shell_bval");
+    if(option->GetNumberOfFunctions())
+         return atof(option->GetFunction(0)->GetName().c_str());
+    else
+        return 0;
+}
+
+int  DRBUDDI_PARSERBASE::getSynthShellNdirs()
+{
+    OptionType::Pointer option = this->GetOption( "DRBUDDI_synth_shell_ndirs");
+    if(option->GetNumberOfFunctions())
+         return atoi(option->GetFunction(0)->GetName().c_str());
+    else
+        return 30;
+}
+
 int  DRBUDDI_PARSERBASE::getDWIBvalue()
 {
     OptionType::Pointer option = this->GetOption( "DRBUDDI_DWI_bval_tensor_fitting");
