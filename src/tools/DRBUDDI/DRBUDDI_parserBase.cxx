@@ -254,6 +254,14 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
+        std::string description = std::string("Isotropic working resolution in mm for the DRBUDDI/EPIREG optimization grid. Overrides the default rule derived from the structural image. Float. Default:0 (use default rule)")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "epi_working_res");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
         std::string description = std::string("Flag to estimate learning rate at every iteration. Makes DRBUDDI slower but better results. Boolean. Default:0")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "DRBUDDI_estimate_LR_per_iteration");
@@ -607,6 +615,15 @@ int  DRBUDDI_PARSERBASE::getSynthShellNdirs()
          return atoi(option->GetFunction(0)->GetName().c_str());
     else
         return 30;
+}
+
+float  DRBUDDI_PARSERBASE::getEPIWorkingRes()
+{
+    OptionType::Pointer option = this->GetOption( "epi_working_res");
+    if(option->GetNumberOfFunctions())
+         return atof(option->GetFunction(0)->GetName().c_str());
+    else
+        return 0;
 }
 
 int  DRBUDDI_PARSERBASE::getDWIBvalue()

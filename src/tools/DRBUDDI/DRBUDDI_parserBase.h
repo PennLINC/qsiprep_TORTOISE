@@ -36,6 +36,7 @@ public:
     int getDWIBvalue();
     float getSynthShellBval();
     int getSynthShellNdirs();
+    float getEPIWorkingRes();
 
     std::string GetInitialMINV();
     std::string GetInitialFINV();

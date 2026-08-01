@@ -113,6 +113,10 @@ int main(int argc,char *argv[])
 
 
     RegistrationSettings::get().setValue<int>("DRBUDDI_DWI_bval_tensor_fitting",parser->getDWIBvalue());
+    // QSIPREP_PLUMB
+    RegistrationSettings::get().setValue<float>("DRBUDDI_synth_shell_bval", parser->getSynthShellBval());
+    RegistrationSettings::get().setValue<int>("DRBUDDI_synth_shell_ndirs", parser->getSynthShellNdirs());
+    RegistrationSettings::get().setValue<float>("epi_working_res", parser->getEPIWorkingRes());
 
 
     DRBUDDI myDRBUDDI(up_name,down_name,structural_names,my_json);

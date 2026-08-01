@@ -412,6 +412,9 @@ void TORTOISE::UpdateSettingsFromCommandLine()
         RegistrationSettings::get().setValue<bool>("grad_nonlin_isGE", parser->getGradNonlinIsGE());
         RegistrationSettings::get().setValue<std::string>("grad_nonlin_warpD", parser->getGradNonlinGradWarpDim());
     }
+    RegistrationSettings::get().setValue<float>("DRBUDDI_synth_shell_bval", parser->getSynthShellBval());
+    RegistrationSettings::get().setValue<int>("DRBUDDI_synth_shell_ndirs", parser->getSynthShellNdirs());
+    RegistrationSettings::get().setValue<float>("epi_working_res", parser->getEPIWorkingRes());
     RegistrationSettings::get().setValue<int>("flipX", parser->getFlipX());
     RegistrationSettings::get().setValue<int>("flipY", parser->getFlipY());
     RegistrationSettings::get().setValue<int>("flipZ", parser->getFlipZ());

@@ -51,11 +51,26 @@ void DRBUDDIBase::CreateBlipUpQuadImage()
     {
         new_spacing= b0_up->GetSpacing();
     }
-    float avg_spacing = (new_spacing[0] + new_spacing[1] + new_spacing[2])/3.;
-    while(avg_spacing>1)
+    float epi_working_res = RegistrationSettings::get().getValue<float>("epi_working_res");  // QSIPREP_EPIRES
+    if(epi_working_res > 0)
     {
-        new_spacing=new_spacing/1.3;
-        avg_spacing = (new_spacing[0] + new_spacing[1] + new_spacing[2])/3.;
+        // Explicit isotropic working grid. Set directly rather than iterating the
+        // default rule below: that rule only ever REFINES spacing, so a coarser
+        // target (qsiprep --sloppy) would be ignored whenever the structural is
+        // already sub-millimetre -- which it is for the T2w used here.
+        new_spacing[0]=epi_working_res;
+        new_spacing[1]=epi_working_res;
+        new_spacing[2]=epi_working_res;
+        (*stream)<<"Using requested EPI working resolution "<<epi_working_res<<" mm"<<std::endl;
+    }
+    else
+    {
+        float avg_spacing = (new_spacing[0] + new_spacing[1] + new_spacing[2])/3.;
+        while(avg_spacing>1)
+        {
+            new_spacing=new_spacing/1.3;
+            avg_spacing = (new_spacing[0] + new_spacing[1] + new_spacing[2])/3.;
+        }
     }
 
     ImageType3D::SizeType new_size;
@@ -423,8 +438,7 @@ void DRBUDDIBase::CreateCorrectionImage(std::string nii_filename,ImageType3D::Po
              if(bvals[v] <= 1.05*synth_bval)
                  dt_indices.push_back(v);
          }
-         if(dt_indices.size() < 7)
-             dt_indices = all_indices;
+         dt_indices = all_indices;   // QSIPREP_ALLVOL: see comment above
 
          float small_delta = RegistrationSettings::get().getValue<float>("small_delta");
          float big_delta   = RegistrationSettings::get().getValue<float>("big_delta");
