@@ -45,7 +45,13 @@ DRBUDDI::DRBUDDI(std::string uname,std::string dname,std::vector<std::string> st
 
 
 #ifdef DRBUDDIALONE
-    this->stream= &((*stream));
+    // Upstream c32518b changed this from &(std::cout) to &((*stream)), which
+    // dereferences the still-uninitialized member (DRBUDDIBase.h:82 declares a
+    // raw `std::ostream *stream;`) and assigns garbage back to itself. Every
+    // standalone DRBUDDI/DRBUDDI_cuda run then segfaults on its first log write,
+    // inside the constructor. TORTOISEProcess is unaffected -- it takes the
+    // #else branch. Restored to the pre-c32518b form.
+    this->stream= &(std::cout);
 #else
     this->stream= TORTOISE::stream;
 #endif
