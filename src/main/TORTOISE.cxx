@@ -77,6 +77,25 @@ TORTOISE::TORTOISE(int argc, char *argv[])
         int nc=(int)(GetNMaxCores()*perc)-1;
         if(nc==0)
             nc=1;
+
+        // An ABSOLUTE core count from the command line wins over the percentage.
+        //
+        // Required under a batch scheduler: getNCores() is
+        // sysconf(_SC_NPROCESSORS_ONLN), which reports the cores ONLINE ON THE
+        // HOST and ignores cgroups and CPU affinity. On a 128-core node where
+        // SLURM granted 8, PercentOfCpuCoresToUse is applied to 128 and the job
+        // oversubscribes its allocation by 16x. A percentage cannot express
+        // "use exactly what I was given"; an absolute count can.
+        //
+        // Mirrors what DRBUDDI_main.cxx already does with the same option, so
+        // --ncores now means the same thing for every TORTOISE executable.
+        if(parser->getNumberOfCores() > 0)
+        {
+            nc=parser->getNumberOfCores();
+            (*stream)<<"Number of threads set from the command line: "<<nc<<std::endl;
+        }
+        if(nc<1)
+            nc=1;
         SetNAvailableCores(nc);
         omp_set_num_threads(GetNAvailableCores());
         if(parser->getDisableITKThreads())
