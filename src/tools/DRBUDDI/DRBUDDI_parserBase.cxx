@@ -323,7 +323,7 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
-        std::string description = std::string("Number of cores to use in the CPU version of DRBUDDI. ONLY applies to the DRBUDDI executable and not TORTOISEProcess. The default is 50\% of system cores.")  ;
+        std::string description = std::string("Number of CPU cores to use. Applies to both DRBUDDI and TORTOISEProcess. This is an ABSOLUTE count and takes precedence over PercentOfCpuCoresToUse in the system settings file. Prefer it under a batch scheduler: the percentage is applied to the host core count, which ignores cgroup and affinity limits, so a job granted 8 cores on a 128-core node would size itself for 128. Default: the system settings percentage.")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "ncores");
         option->SetDescription( description );

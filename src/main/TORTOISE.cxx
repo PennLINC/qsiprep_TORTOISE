@@ -92,7 +92,11 @@ TORTOISE::TORTOISE(int argc, char *argv[])
         if(parser->getNumberOfCores() > 0)
         {
             nc=parser->getNumberOfCores();
-            (*stream)<<"Number of threads set from the command line: "<<nc<<std::endl;
+            // NOT (*stream): TORTOISE::stream is not constructed until later in
+            // this function, and writing to it here would dereference an
+            // uninitialised pointer -- the same defect that made standalone
+            // DRBUDDI segfault at c32518b.
+            std::cout<<"Number of threads set from the command line: "<<nc<<std::endl;
         }
         if(nc<1)
             nc=1;
