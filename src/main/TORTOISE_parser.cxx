@@ -450,6 +450,14 @@ void TORTOISE_PARSER::InitializeCommandLineOptions()
 
 
     {
+        std::string description = std::string("How many volumes the GPU processes in the time one CPU thread processes one, during motion & eddy registration. DIFFPREP splits each pass between the GPU and the CPU threads using this number: per pass the GPU takes gpu_cpu_ratio volumes and each CPU thread takes one, so the pass count is ceil(Nvols / (NGPUs*gpu_cpu_ratio + ncores - NGPUs)). Raise it on machines whose GPU is fast relative to their cores (a modern datacentre card with few slow cores), lower it when the GPU is weak or shared. Too high starves the CPU threads and serialises work onto the GPU; too low leaves the GPU idle while CPU threads grind. Default: 15.")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "gpu_cpu_ratio");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
         std::string description = std::string("Number of iterations for high_bvalue / s2v / repol correction. Has no effect for dti regime data with s2v and repol disabled. Default:4 . Zero disables all iterative correction such as high-b, s2v or repol. ")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "niter");
@@ -946,6 +954,14 @@ int TORTOISE_PARSER::getOutlierReplacementModeAggessive()
 }
 
 
+int TORTOISE_PARSER::getGPUCPURatio()
+{
+    OptionType::Pointer option = this->GetOption( "gpu_cpu_ratio");
+    if(option->GetNumberOfFunctions())
+        return  (atoi(option->GetFunction(0)->GetName().c_str()));
+    else
+       return 0;      // 0 = not supplied; caller keeps its own default
+}
 int TORTOISE_PARSER::getNiter()
 {
     OptionType::Pointer option = this->GetOption( "niter");

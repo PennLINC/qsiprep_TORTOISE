@@ -100,6 +100,21 @@ TORTOISE::TORTOISE(int argc, char *argv[])
         }
         if(nc<1)
             nc=1;
+
+        // GPU/CPU work split for DIFFPREP's motion & eddy registration. Upstream
+        // hardcodes 15 (DIFFPREP.cxx), which is a property of the machine rather
+        // than of the data: it is the number of volumes the GPU gets through
+        // while one CPU thread does one. A node pairing a fast card with few
+        // slow cores wants a larger number; a weak or shared GPU wants a smaller
+        // one. Zero from the parser means "not supplied", so the default stands.
+        if(parser->getGPUCPURatio() > 0)
+        {
+            TORTOISE::gpu_cpu_ratio = parser->getGPUCPURatio();
+            // NOT (*stream): it is not constructed until later in this function.
+            std::cout<<"GPU/CPU volume ratio set from the command line: "
+                     <<TORTOISE::gpu_cpu_ratio<<std::endl;
+        }
+
         SetNAvailableCores(nc);
         omp_set_num_threads(GetNAvailableCores());
         if(parser->getDisableITKThreads())

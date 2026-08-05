@@ -74,6 +74,7 @@ public:
 
 
     int getNiter();
+    int getGPUCPURatio();
     int getDTIBval();
     int getHARDIBval();
 

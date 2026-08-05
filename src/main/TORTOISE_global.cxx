@@ -7,6 +7,7 @@
 
 TORTOISE::TeeStream* TORTOISE::stream=nullptr;
 std::string TORTOISE::executable_folder="";
+int TORTOISE::gpu_cpu_ratio=15;
 std::vector<uint> OMPTHREADBASE::Nthreads_per_OMP_thread;
 std::atomic_uint OMPTHREADBASE::NAvailableCores={0};
 

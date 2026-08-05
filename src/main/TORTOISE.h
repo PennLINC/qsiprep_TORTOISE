@@ -180,6 +180,12 @@ public:
     static TeeStream* stream;
     static std::string executable_folder;
 
+    // Volumes the GPU handles per pass, against one per CPU thread, in
+    // DIFFPREP's motion & eddy registration. Hardcoded to 15 upstream; exposed
+    // as --gpu_cpu_ratio because the right value is a property of the machine,
+    // not of the data.
+    static int gpu_cpu_ratio;
+
 
 
 };

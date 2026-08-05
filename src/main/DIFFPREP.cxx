@@ -583,7 +583,11 @@ void DIFFPREP::SynthMotionEddyCorrectAllDWIs(std::vector<ImageType3D::Pointer> t
 
 
     #ifdef USECUDA
-        const int GPU_CPU_ratio=15;    //this should be the ratio of how much GPU is faster than a CPU per volume
+        // Was hardcoded to 15. Now settable with --gpu_cpu_ratio, because the
+        // right value depends on the GPU/CPU balance of the machine: it decides
+        // how the volumes of each pass are split between the single GPU worker
+        // and the (ncores - NGPUs) CPU workers.
+        const int GPU_CPU_ratio=TORTOISE::gpu_cpu_ratio;
                                  // Ideally, I should check what GPU it is and automatically decide it, but too much work for this.
         //The volumes in my_threads 1 will be processed by te GPU
         // the others by the CPU
