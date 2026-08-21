@@ -4,33 +4,73 @@
 
 #include "defines.h"
 #include "unring.h"
+#include "itkMultiThreaderBase.h"
+#include <vector>
 
 
 int main(int argc, char* argv[])
 {
-    if(argc<3)
+    // Pull the optional flags out of the argument list so the positional
+    // arguments below keep their fixed order regardless of where a flag sits.
+    int ncores = -1;
+    bool disable_itk_threads = false;
+    std::vector<std::string> pos;
+    for(int i=1; i<argc; i++)
     {
-        std::cout<<"Usage: Gibbs input_nifti  output_nifti kspace_coverage(1,0.875,0.75) phase_encoding_dir(0: horizontal, 1:vertical) nsh(optional) minW(optional) maxW(optional)  "<<std::endl;
+        std::string arg(argv[i]);
+        if(arg=="--ncores" && i+1<argc)
+        {
+            ncores = atoi(argv[++i]);
+            continue;
+        }
+        if(arg=="--disable_itk_threads")
+        {
+            disable_itk_threads = true;
+            continue;
+        }
+        pos.push_back(arg);
+    }
+
+    if(pos.size()<4)
+    {
+        std::cout<<"Usage: Gibbs input_nifti  output_nifti kspace_coverage(1,0.875,0.75) phase_encoding_dir(0: horizontal, 1:vertical) nsh(optional) minW(optional) maxW(optional) [--ncores N] [--disable_itk_threads] "<<std::endl;
         return EXIT_FAILURE;
     }
 
     TORTOISE t;
 
-    std::string input_name(argv[1]);
-    std::string output_name(argv[2]);
-    float gibbs_kspace_coverage= atof(argv[3]);
+    // The TORTOISE constructor sets omp_set_num_threads() to the host core count
+    // (getNCores() = sysconf(_SC_NPROCESSORS_ONLN); it ignores OMP_NUM_THREADS),
+    // so any cap has to be applied after it. Mirroring DRBUDDI_main.cxx, --ncores
+    // sets the ITK and OpenMP thread counts together; --disable_itk_threads then
+    // pins ITK to one thread so the two layers can't multiply (ncores x ncores)
+    // under a scheduler allocation.
+    if(ncores>0)
+    {
+        itk::MultiThreaderBase::SetGlobalDefaultNumberOfThreads(ncores);
+        omp_set_num_threads(ncores);
+        TORTOISE::SetNAvailableCores(ncores);
+    }
+    if(disable_itk_threads)
+    {
+        itk::MultiThreaderBase::SetGlobalDefaultNumberOfThreads(1);
+    }
+
+    std::string input_name(pos[0]);
+    std::string output_name(pos[1]);
+    float gibbs_kspace_coverage= atof(pos[2].c_str());
     int gibbs_nsh=25;
     int gibbs_minW=1;
     int gibbs_maxW=3;
 
-    short phase=atoi(argv[4]);
+    short phase=atoi(pos[3].c_str());
 
-    if(argc>5)
-        gibbs_nsh=atoi(argv[5]);
-    if(argc>6)
-        gibbs_minW=atoi(argv[7]);
-    if(argc>8)
-        gibbs_maxW=atoi(argv[7]);
+    if(pos.size()>4)
+        gibbs_nsh=atoi(pos[4].c_str());
+    if(pos.size()>5)
+        gibbs_minW=atoi(pos[5].c_str());
+    if(pos.size()>6)
+        gibbs_maxW=atoi(pos[6].c_str());
 
 
     float ks_cov= gibbs_kspace_coverage;

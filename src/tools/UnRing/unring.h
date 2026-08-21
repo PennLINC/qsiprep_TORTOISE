@@ -662,7 +662,7 @@ ImageType4D::Pointer UnRing78(ImageType4D::Pointer input_img, int nsh=25, int mi
 
             for (int j = 0 ; j < sz[1];j++)
             {
-                if(j<orig_sz[2])
+                if(j<orig_sz[1])
                 {
                     ind4[1]=j;
                     for (int i = 0 ; i < sz[0];i++)
@@ -727,7 +727,7 @@ ImageType4D::Pointer UnRing68(ImageType4D::Pointer input_img, int nsh=25, int mi
 
     ImageType4D::SizeType upperExtendRegion;
     upperExtendRegion.Fill(0);
-    upperExtendRegion[1]= (2-(input_img->GetLargestPossibleRegion().GetSize()[1]%4))%2;
+    upperExtendRegion[1]= (2-(input_img->GetLargestPossibleRegion().GetSize()[1]%2))%2;
 
     using FilterType = itk::ConstantPadImageFilter<ImageType4D, ImageType4D>;
     FilterType::Pointer filter = FilterType::New();
