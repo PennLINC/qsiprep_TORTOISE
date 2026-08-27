@@ -13,6 +13,15 @@
 
 #include "../utilities/write_3D_image_to_4D_file.h"
 
+#include "vnl/vnl_math.h"
+#include "vnl/vnl_matrix.h"
+
+#include <algorithm>
+#include <fstream>
+#include <iomanip>
+#include <string>
+#include <vector>
+
 double cross_correlation(ImageType3D::Pointer img1,ImageType3D::Pointer img2)
 {
     ImageType3D::Pointer m_MetricImage= ImageType3D::New();
@@ -117,21 +126,126 @@ double cross_correlation(ImageType3D::Pointer img1,ImageType3D::Pointer img2)
     return value;
 }
 
-int select_best_b0(ImageType4D::Pointer img4d, vnl_vector<double> bvals, ImageType3D::Pointer &avg_best_b0_img)
+void write_b0_selection_report(std::string report_path,
+                               const std::vector<int> &b0_ids,
+                               const vnl_vector<double> &bvals,
+                               const std::vector<RigidTransformType::Pointer> &transforms,
+                               const vnl_matrix<double> &CCs,
+                               int best_r, int best_c)
+{
+    std::ofstream outfile(report_path.c_str());
+    if(!outfile.good())
+    {
+        std::cout<<"Could not write the b=0 selection report to "<<report_path<<std::endl;
+        return;
+    }
+
+    int n = (int)b0_ids.size();
+    const double RADTODEG= 180.0/vnl_math::pi;
+
+    outfile<<"# Rigid parameters are ITK Euler3DTransform (ZYX, LPS mm/deg, fixed-to-moving) mapping the registration reference to each volume."<<std::endl;
+    outfile<<"volume_index\tbval\tregistered_to\ttrans_x_mm\ttrans_y_mm\ttrans_z_mm"
+           <<"\trot_x_deg\trot_y_deg\trot_z_deg\ttranslation_total_mm\trotation_total_deg"
+           <<"\tmean_cc\tin_best_pair\tselected";
+    for(int j=0;j<n;j++)
+        outfile<<"\tcc_vol"<<b0_ids[j];
+    outfile<<std::endl;
+
+    for(int i=0;i<n;i++)
+    {
+        std::string ref_label= "first_b0";
+        if(n==1)
+            ref_label="none";
+        else if(i==0)
+            ref_label="mean_b0";
+
+        RigidTransformType::TranslationType trans;
+        trans.Fill(0);
+        double rots[3]={0,0,0};
+        double total_rot=0;
+        if(transforms[i])
+        {
+            trans= transforms[i]->GetTranslation();
+            rots[0]= transforms[i]->GetAngleX()*RADTODEG;
+            rots[1]= transforms[i]->GetAngleY()*RADTODEG;
+            rots[2]= transforms[i]->GetAngleZ()*RADTODEG;
+            auto R= transforms[i]->GetMatrix();
+            double cos_arg= (R(0,0)+R(1,1)+R(2,2)-1.)/2.;
+            cos_arg= std::max(-1.,std::min(1.,cos_arg));
+            total_rot= acos(cos_arg)*RADTODEG;
+        }
+        double total_trans= sqrt(trans[0]*trans[0]+trans[1]*trans[1]+trans[2]*trans[2]);
+
+        double cc_sum=0;
+        for(int j=0;j<n;j++)
+        {
+            if(j!=i)
+                cc_sum+= CCs(i,j);
+        }
+
+        outfile<<b0_ids[i]<<"\t"<<std::fixed<<std::setprecision(1)<<bvals[b0_ids[i]]<<"\t"<<ref_label;
+        outfile<<std::setprecision(4);
+        outfile<<"\t"<<trans[0]<<"\t"<<trans[1]<<"\t"<<trans[2];
+        outfile<<"\t"<<rots[0]<<"\t"<<rots[1]<<"\t"<<rots[2];
+        outfile<<"\t"<<total_trans<<"\t"<<total_rot;
+        outfile<<std::setprecision(6);
+        if(n>1)
+            outfile<<"\t"<<cc_sum/(n-1);
+        else
+            outfile<<"\tNaN";
+        outfile<<"\t"<<(int)(i==best_r || i==best_c);
+        outfile<<"\t"<<(int)(i==best_r);
+        for(int j=0;j<n;j++)
+        {
+            if(j==i)
+                outfile<<"\tNaN";
+            else
+                outfile<<"\t"<<CCs(i,j);
+        }
+        outfile<<std::endl;
+    }
+    outfile.close();
+}
+
+int select_best_b0(ImageType4D::Pointer img4d, vnl_vector<double> bvals, ImageType3D::Pointer &avg_best_b0_img,
+                   float b0_threshold=-1, std::string report_path="")
 {
     using OkanQuadraticTransformType=TORTOISE::OkanQuadraticTransformType;
 
-    float b0_val= bvals.min_value();         //get b=0 images' volume id
     std::vector<int> b0_ids;
-    for(int v=0;v<bvals.size();v++)
+    if(b0_threshold>=0)
     {
-        if(fabs(bvals[v]-b0_val)<10)
-            b0_ids.push_back(v);
+        for(int v=0;v<bvals.size();v++)
+        {
+            if(bvals[v]<=b0_threshold)
+                b0_ids.push_back(v);
+        }
+        if(b0_ids.size()==0)
+        {
+            std::cout<<"No volumes with b-value <= "<<b0_threshold<<" in the dataset."<<std::endl;
+            return -1;
+        }
     }
+    else
+    {
+        float b0_val= bvals.min_value();         //get b=0 images' volume id
+        for(int v=0;v<bvals.size();v++)
+        {
+            if(fabs(bvals[v]-b0_val)<10)
+                b0_ids.push_back(v);
+        }
+    }
+
+    std::vector<RigidTransformType::Pointer> b0_to_ref_trans(b0_ids.size(),nullptr);
 
     if(b0_ids.size() ==1)
     {
         avg_best_b0_img = extract_3D_volume_from_4D(img4d, b0_ids[0]);
+        if(report_path!="")
+        {
+            vnl_matrix<double> CCs(1,1,0.);
+            write_b0_selection_report(report_path,b0_ids,bvals,b0_to_ref_trans,CCs,0,0);
+        }
         return b0_ids[0];
     }
 
@@ -149,16 +263,22 @@ int select_best_b0(ImageType4D::Pointer img4d, vnl_vector<double> bvals, ImageTy
     for(int v=1;v<b0_ids.size();v++)
     {
         TORTOISE::EnableOMPThread();
-        OkanQuadraticTransformType::Pointer curr_trans= RigidRegisterImages(registered_imgs[0],registered_imgs[v]);
+        // Same computation as RigidRegisterImages, unwrapped so the Euler
+        // parameters survive for the selection report.
+        RigidTransformType::Pointer curr_rigid= RigidRegisterImagesEuler(registered_imgs[0],registered_imgs[v]);
+        CompositeTransformType::Pointer curr_composite= CompositeTransformType::New();
+        curr_composite->AddTransform(curr_rigid);
+        OkanQuadraticTransformType::Pointer curr_trans= CompositeLinearToQuadratic(curr_composite,"vertical");
+        b0_to_ref_trans[v]=curr_rigid;
 
         typedef itk::ResampleImageFilter<ImageType3D, ImageType3D> ResampleImageFilterType;
         ResampleImageFilterType::Pointer resampleFilter = ResampleImageFilterType::New();
         resampleFilter->SetOutputParametersFromImage(registered_imgs[0]);
         resampleFilter->SetInput(registered_imgs[v]);
-        resampleFilter->SetTransform(curr_trans);        
+        resampleFilter->SetTransform(curr_trans);
         int NITK= TORTOISE::GetAvailableITKThreadFor();
         resampleFilter->SetNumberOfWorkUnits(NITK);
-        resampleFilter->Update();        
+        resampleFilter->Update();
         registered_imgs[v]= resampleFilter->GetOutput();
         TORTOISE::DisableOMPThread();
     }
@@ -184,25 +304,32 @@ int select_best_b0(ImageType4D::Pointer img4d, vnl_vector<double> bvals, ImageTy
     }
 
     {
-        OkanQuadraticTransformType::Pointer curr_trans= RigidRegisterImages(avg_img,registered_imgs[0]);
+        RigidTransformType::Pointer curr_rigid= RigidRegisterImagesEuler(avg_img,registered_imgs[0]);
+        CompositeTransformType::Pointer curr_composite= CompositeTransformType::New();
+        curr_composite->AddTransform(curr_rigid);
+        OkanQuadraticTransformType::Pointer curr_trans= CompositeLinearToQuadratic(curr_composite,"vertical");
+        b0_to_ref_trans[0]=curr_rigid;
 
         typedef itk::ResampleImageFilter<ImageType3D, ImageType3D> ResampleImageFilterType;
         ResampleImageFilterType::Pointer resampleFilter = ResampleImageFilterType::New();
         resampleFilter->SetOutputParametersFromImage(avg_img);
         resampleFilter->SetInput(registered_imgs[0]);
-        resampleFilter->SetTransform(curr_trans);                
-        resampleFilter->Update();        
+        resampleFilter->SetTransform(curr_trans);
+        resampleFilter->Update();
         registered_imgs[0]= resampleFilter->GetOutput();
     }
 
 
-    int best_r, best_c;
+    vnl_matrix<double> CCs(b0_ids.size(),b0_ids.size(),0.);
+    int best_r=0, best_c=0;
     double best_CC=-1;
     for(int r=0;r<b0_ids.size();r++)
     {
         for(int c=r+1;c<b0_ids.size();c++)
         {
             double CC= cross_correlation(registered_imgs[r],registered_imgs[c]);
+            CCs(r,c)=CC;
+            CCs(c,r)=CC;
             if(CC>best_CC)
             {
                 best_CC=CC;
@@ -211,6 +338,9 @@ int select_best_b0(ImageType4D::Pointer img4d, vnl_vector<double> bvals, ImageTy
             }
         }
     }
+
+    if(report_path!="")
+        write_b0_selection_report(report_path,b0_ids,bvals,b0_to_ref_trans,CCs,best_r,best_c);
 
 
     avg_best_b0_img = ImageType3D::New();
