@@ -85,13 +85,29 @@ is plumbing rather than new IO code.
 ```cpp
 struct PFGeometry
 {
-    bool  is_partial_fourier;
-    int   n_pe;                    // matrix size along the PE axis
-    int   n_missing;               // number of zero-filled lines
-    float factor;                  // (n_pe - n_missing) / n_pe
-    enum Side { Low, High } side;  // Low = most-negative-ky end is missing
-    float zero_band_energy_ratio;  // evidence, for the log
+    // Low = most-negative-ky lines missing; High = most-positive-ky lines missing.
+    enum Side { Low, High };
+
+    enum Status
+    {
+        NoZeroBand,        // full k-space, or already reconstructed by the vendor
+        InteriorBand,      // empty band away from the edges: not PF truncation
+        ImplausibleFactor, // more than half of k-space missing
+        DetectedPF
+    };
+
+    Status status;
+    bool   is_partial_fourier;     // == (status == DetectedPF)
+    int    n_pe;                   // matrix size along the PE axis
+    int    n_missing;              // number of zero-filled lines
+    float  factor;                 // (n_pe - n_missing) / n_pe
+    Side   side;
+    float  zero_band_energy_ratio; // evidence, for the log
 };
+
+`Status` exists because the error-handling table below needs to distinguish "no
+zero band" (skip POCS, continue, exit 0) from "factor below 0.5" (error, exit
+1). A single boolean cannot carry that distinction.
 
 PFGeometry DetectPFGeometry(ImageType4DComplex::Pointer img,
                             int pe_axis,
@@ -152,8 +168,11 @@ For each in-plane slice of each volume:
 5. Stop at `iters` or when `||x_new - x|| / ||x|| < tol`.
 
 Step 4's data-consistency substitution is what bounds the worst case: measured
-k-space lines are always restored exactly, so POCS can only alter the region
-that was zero-filled to begin with.
+k-space lines are always restored, so POCS can only alter the region that was
+zero-filled to begin with. The substitution itself is exact, but the
+surrounding inverse FFT and the store back to `float` pixels leave round-trip
+error of order 1e-7 relative, so the test asserts a tight bound rather than
+bit-for-bit equality.
 
 Parallelised over volumes with the same OpenMP structure the existing `UnRing*`
 functions use, including `TORTOISE::EnableOMPThread()` / `DisableOMPThread()`.
@@ -261,7 +280,7 @@ without introducing a test-framework dependency: `enable_testing()`, a
 | 2 | Magnitude equivalence | `UnRingFullComplex` on an image with zero imaginary part matches `UnRingFull` to 1e-9 relative. |
 | 3 | PF detection, positive | Correct factor and side for 6/8 and 7/8, both sides, even and odd `n_pe`. |
 | 4 | PF detection, negative | Full k-space in, `is_partial_fourier == false` out. |
-| 5 | POCS consistency and identity | Acquired lines bit-preserved after iteration; POCS on full k-space is a no-op. |
+| 5 | POCS consistency and identity | Acquired lines preserved to within 1e-5 relative after iteration; POCS on full k-space is a no-op. |
 | 6 | POCS accuracy | On a known complex phantom, RMSE to ground truth is at least 10% below the zero-filled RMSE. Margin calibrated when the test is written, then fixed. |
 
 Test 2 is the regression anchor. `unring_2d` already carries an imaginary
