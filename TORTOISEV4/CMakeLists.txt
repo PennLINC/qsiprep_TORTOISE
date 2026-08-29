@@ -256,6 +256,9 @@ target_link_libraries(SelectBestB0 ${ITK_LIBRARIES} ${Boost_LIBRARIES} )
 add_executable(Gibbs ../src/tools/UnRing/gibbs_main.cxx ../src/tools/ResampleDWIs/resample_dwis.cxx ${SOURCES})
 target_link_libraries(Gibbs ${ITK_LIBRARIES} ${Boost_LIBRARIES} fftw3 )
 
+add_executable(GibbsComplex ../src/tools/UnRing/gibbs_complex_main.cxx ../src/tools/UnRing/gibbs_complex_parser.cxx ../src/tools/ResampleDWIs/resample_dwis.cxx ${SOURCES})
+target_link_libraries(GibbsComplex ${ITK_LIBRARIES} ${Boost_LIBRARIES} fftw3 )
+
 add_executable(GibbsComplexTests ../src/tools/UnRing/tests/test_gibbs_complex.cxx ../src/tools/ResampleDWIs/resample_dwis.cxx ${SOURCES})
 target_link_libraries(GibbsComplexTests ${ITK_LIBRARIES} ${Boost_LIBRARIES} fftw3 )
 
