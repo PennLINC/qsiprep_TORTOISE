@@ -208,6 +208,10 @@ under test, PE axis = axis 1:
 
 ### 3.6 Normalised summary
 
+> **RETRACTED AS A RANKING.** The table below is retained because the numbers are real, but
+> §3.7 shows the metric is dominated by blur sensitivity and **cannot rank these methods**.
+> Do not cite this table to say RPG beat SuShi, or that either beat POCS.
+
 Change in ringing/sharpness versus uncorrected; negative is an improvement:
 
 | run | vol | RPG | SuShi only | POCS+SuShi |
@@ -218,6 +222,47 @@ Change in ringing/sharpness versus uncorrected; negative is an improvement:
 | NIBS PA | high-b | −14% | −10% | **+13%** |
 | ds006131 | b≈0 | −17% | −8% | **+1%** |
 | ds006131 | high-b | −15% | +3% | **+9%** |
+
+### 3.7 The metric is invalid for ranking these arms
+
+Two controls were run after the fact. Both fail.
+
+**Control 1 — does a pure blur "improve" the metric?** A Gaussian blur along the phase-encode
+axis corrects no ringing whatsoever. On NIBS AP b≈0 it scores −5% (σ=0.4), −18% (σ=0.6),
+−21% (σ=0.8), −19% (σ=1.0); on ds006131 high-b, up to −24%. Compare SuShi −8% and RPG −13%
+to −17%. **A method that does nothing but blur outscores both real methods.** Normalising
+ringing by sharpness does not neutralise blur — a second derivative is attenuated faster than
+a first, so the ratio retains a large systematic preference for smoothing.
+
+**Control 2 — at matched sharpness, does any method beat an equally-blurring filter?**
+For each arm, the blur σ giving the same edge sharpness was found by interpolation over a fine
+σ grid, and residual ringing compared. Positive would mean the method is genuinely
+ringing-specific:
+
+| run | vol | SuShi only | RPG | POCS+SuShi |
+|---|---|---|---|---|
+| NIBS AP | b≈0 | −7% | −5% | sharper than any blur |
+| NIBS AP | high-b | −9% | −9% | sharper than any blur |
+| NIBS PA | b≈0 | −8% | −8% | sharper than any blur |
+| NIBS PA | high-b | −8% | −11% | sharper than any blur |
+| ds006131 | b≈0 | −4% | −5% | −6% |
+| ds006131 | high-b | −13% | −1% | −13% |
+
+**Every arm is negative.** None removes more ringing than a blur that costs the same
+sharpness. POCS sits off the scale in the opposite direction — it is *sharper* than the
+uncorrected image, so no blur matches it, which means the §3.6 ranking was comparing
+quantities that do not lie on a common axis.
+
+**Consequence.** The apparent ordering in §3.6 tracks how much each method blurs, not how much
+ringing it removes. The real-data arm comparison in this document establishes **nothing** about
+the relative merit of RPG, complex SuShi, or POCS. H1 in §5 is therefore no longer a
+hypothesis; it is confirmed, and it invalidates the ranking rather than merely qualifying it.
+
+**What survives**, because it does not use this proxy: the zero-filled determination by
+conjugate-mirror ratio (§3.2), the AP/PA side flip, the measured-vs-declared factor
+disagreement on ds006131 (0.838 vs 0.875), the detector threshold defect, and the complex-TV
+defect and its fix.
+
 
 ---
 
@@ -349,7 +394,7 @@ both remain open; the tables in §3 stand as measured.
 
 ## 5. Candidate explanations, ranked
 
-### H1 — The metric penalises genuine resolution recovery *(strongest, test first)*
+### H1 — The metric is invalid *(CONFIRMED, see §3.7 — no longer a hypothesis)*
 
 POCS restores high-spatial-frequency content that zero-filling removed. That legitimately
 raises **both** `|∂²A/∂y²|` (the ringing proxy) **and** `|∂A/∂y|` (sharpness).
@@ -364,7 +409,9 @@ This means the small b≈0 penalties (+1% to +4%) may be **an artefact of the me
 real degradation**. The high-b penalties (+9% to +14%) are large enough that they are
 less easily explained away, but the same confound applies in principle.
 
-**Do not treat "POCS made it worse" as established until this is resolved.**
+**Resolved in §3.7: a pure blur outscores every arm, and at matched sharpness no arm beats a
+blur. "POCS made it worse" is NOT established, and neither is "RPG is best". The metric cannot
+rank these methods at all.** H2 below remains open and now needs ground truth to test.
 
 ### H2 — POCS's smooth-phase assumption is violated by real diffusion phase
 
