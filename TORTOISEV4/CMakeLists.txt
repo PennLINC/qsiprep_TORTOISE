@@ -261,6 +261,8 @@ target_link_libraries(GibbsComplexTests ${ITK_LIBRARIES} ${Boost_LIBRARIES} fftw
 
 add_test(NAME complex_io_roundtrip COMMAND GibbsComplexTests complex_io_roundtrip)
 add_test(NAME magnitude_equivalence COMMAND GibbsComplexTests magnitude_equivalence)
+add_test(NAME pf_detection_positive COMMAND GibbsComplexTests pf_detection_positive)
+add_test(NAME pf_detection_negative COMMAND GibbsComplexTests pf_detection_negative)
 
 add_executable(CombineDWIs ../src/tools/CombineDWIs/combine_dwis_main.cxx  ${SOURCES})
 target_link_libraries(CombineDWIs ${ITK_LIBRARIES} ${Boost_LIBRARIES}  )

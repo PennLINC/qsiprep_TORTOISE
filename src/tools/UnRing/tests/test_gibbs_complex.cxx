@@ -1,6 +1,7 @@
 #include "defines.h"
 #include "TORTOISE.h"
 #include "../unring.h"
+#include "../pf_geometry.h"
 #include "itkImageIOFactory.h"
 #include "itkImageIOBase.h"
 #include <algorithm>
@@ -168,6 +169,130 @@ static int test_magnitude_equivalence()
     return 0;
 }
 
+// Build a complex image whose k-space has an exactly-zero band of band_len
+// lines starting at shifted PE index band_start. band_len == 0 gives full
+// k-space. Values decay as 1/r from DC so the energy profile has realistic
+// dynamic range instead of being flat.
+static ImageType4DComplex::Pointer MakeBandedImage(int nx, int ny, int band_start,
+                                                   int band_len, int pe_axis)
+{
+    const int npix = nx * ny;
+    fftw_complex *K  = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_complex *im = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_plan p = fftw_plan_dft_2d(ny, nx, K, im, FFTW_BACKWARD, FFTW_ESTIMATE);
+
+    const int band_end = band_start + band_len - 1;
+
+    for (int sy = 0; sy < ny; sy++) {
+        for (int sx = 0; sx < nx; sx++) {
+            const int uy = ShiftedToUnshifted(sy, ny);
+            const int ux = ShiftedToUnshifted(sx, nx);
+            const int pe = (pe_axis == 0) ? sx : sy;
+
+            double re = 0.0, imv = 0.0;
+            if (band_len == 0 || pe < band_start || pe > band_end) {
+                const double dy = sy - ny / 2;
+                const double dx = sx - nx / 2;
+                const double r = sqrt(dx * dx + dy * dy) + 1.0;
+                re  = cos(0.7 * sx + 0.3 * sy) / r;
+                imv = sin(0.4 * sx - 0.9 * sy) / r;
+            }
+            K[nx * uy + ux][0] = re;
+            K[nx * uy + ux][1] = imv;
+        }
+    }
+    fftw_execute(p);
+
+    ImageType4DComplex::SizeType sz;
+    sz[0] = nx; sz[1] = ny; sz[2] = 1; sz[3] = 1;
+    ImageType4DComplex::IndexType start; start.Fill(0);
+    ImageType4DComplex::RegionType reg(start, sz);
+    ImageType4DComplex::Pointer img = ImageType4DComplex::New();
+    img->SetRegions(reg);
+    img->Allocate();
+
+    ImageType4DComplex::IndexType ind; ind[2] = 0; ind[3] = 0;
+    for (int y = 0; y < ny; y++) {
+        ind[1] = y;
+        for (int x = 0; x < nx; x++) {
+            ind[0] = x;
+            img->SetPixel(ind, std::complex<float>((float)im[nx * y + x][0],
+                                                   (float)im[nx * y + x][1]));
+        }
+    }
+
+    fftw_destroy_plan(p);
+    fftw_free(K);
+    fftw_free(im);
+    return img;
+}
+
+static int test_pf_detection_positive()
+{
+    struct Case { int nx, ny, n_missing; PFGeometry::Side side; int pe_axis; const char *label; };
+    Case cases[] = {
+        { 64, 64, 16, PFGeometry::Low,  1, "6/8 along y, low side"  },
+        { 64, 64,  8, PFGeometry::High, 1, "7/8 along y, high side" },
+        { 64, 63, 16, PFGeometry::Low,  1, "odd PE size"            },
+        { 64, 64, 16, PFGeometry::High, 0, "PF along x"             },
+    };
+
+    for (int c = 0; c < 4; c++) {
+        const int n_pe = (cases[c].pe_axis == 0) ? cases[c].nx : cases[c].ny;
+        const int band_start = (cases[c].side == PFGeometry::Low) ? 0 : n_pe - cases[c].n_missing;
+
+        ImageType4DComplex::Pointer img =
+            MakeBandedImage(cases[c].nx, cases[c].ny, band_start, cases[c].n_missing, cases[c].pe_axis);
+
+        PFGeometry g = DetectPFGeometry(img, cases[c].pe_axis, 1e-6f, 8);
+
+        std::cout << cases[c].label << ": n_missing=" << g.n_missing
+                  << " factor=" << g.factor << " side=" << (int)g.side << std::endl;
+
+        CHECK(g.status == PFGeometry::DetectedPF);
+        CHECK(g.is_partial_fourier);
+        CHECK(g.n_pe == n_pe);
+        CHECK(g.n_missing == cases[c].n_missing);
+        CHECK(g.side == cases[c].side);
+        CHECK(fabs(g.factor - (float)(n_pe - cases[c].n_missing) / (float)n_pe) < 1e-4f);
+    }
+
+    std::cout << "PASS pf_detection_positive" << std::endl;
+    return 0;
+}
+
+static int test_pf_detection_negative()
+{
+    // Full k-space: nothing to detect.
+    {
+        ImageType4DComplex::Pointer img = MakeBandedImage(64, 64, 0, 0, 1);
+        PFGeometry g = DetectPFGeometry(img, 1, 1e-6f, 8);
+        CHECK(!g.is_partial_fourier);
+        CHECK(g.status == PFGeometry::NoZeroBand);
+        CHECK(g.n_missing == 0);
+    }
+
+    // A zero band floating in the interior is not asymmetric truncation.
+    // Reporting it as PF would be worse than reporting nothing.
+    {
+        ImageType4DComplex::Pointer img = MakeBandedImage(64, 64, 20, 8, 1);
+        PFGeometry g = DetectPFGeometry(img, 1, 1e-6f, 8);
+        CHECK(!g.is_partial_fourier);
+        CHECK(g.status == PFGeometry::InteriorBand);
+    }
+
+    // More than half of k-space missing is implausible for PF.
+    {
+        ImageType4DComplex::Pointer img = MakeBandedImage(64, 64, 0, 40, 1);
+        PFGeometry g = DetectPFGeometry(img, 1, 1e-6f, 8);
+        CHECK(!g.is_partial_fourier);
+        CHECK(g.status == PFGeometry::ImplausibleFactor);
+    }
+
+    std::cout << "PASS pf_detection_negative" << std::endl;
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     // Later tasks' tests (unring.h, pocs.h) call TORTOISE::EnableOMPThread(),
@@ -185,6 +310,8 @@ int main(int argc, char *argv[])
 
     if (name == "complex_io_roundtrip") return test_complex_io_roundtrip();
     if (name == "magnitude_equivalence") return test_magnitude_equivalence();
+    if (name == "pf_detection_positive") return test_pf_detection_positive();
+    if (name == "pf_detection_negative") return test_pf_detection_negative();
 
     std::cerr << "Unknown test: " << name << std::endl;
     return 1;
