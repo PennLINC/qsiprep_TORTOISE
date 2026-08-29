@@ -111,6 +111,63 @@ Usage:FSLBVecsToTORTOISEBmatrix bvals_file bvecs_file
 
 Converts a bvecs and bvals to a TORTOISE format Bmatrix. Normally not necessary for data processing.
 
+## GibbsComplex
+Usage: GibbsComplex -i input_complex_nifti -o output_complex_nifti [options]
+
+Partial-Fourier-aware Gibbs ringing correction for complex-valued DWIs. Reads a complex-valued (COMPLEX64 or COMPLEX128) 4D NIFTI, optionally restores the un-acquired partial-Fourier region of k-space with POCS, and applies the Kellner et al. local subvoxel-shift method to the complex data rather than to its magnitude. Lee, Novikov and Fieremans (MRM 2021) show this is more robust than magnitude-domain RPG when phase information is available, particularly at aggressive partial-Fourier factors.
+
+The partial-Fourier factor and the truncated side of k-space are detected automatically from the zero-filled band. Data with no zero band -- full-Fourier acquisitions, or reconstructions where the vendor already applied homodyne or POCS -- is reported as such and the POCS stage is skipped, so the command will not apply a second partial-Fourier reconstruction on top of the scanner's.
+
+For magnitude-only data, use the Gibbs command, which implements the magnitude-domain RPG method.
+
+     -i, --input
+          Full path to the input complex-valued 4D NIFTI. REQUIRED.
+
+     -o, --output
+          Full path to the output complex-valued 4D NIFTI. REQUIRED.
+
+     --output_magnitude
+          Optional additional magnitude-only output, written in the same pass.
+
+     --pe_dir
+          Phase encoding direction. 0: horizontal, 1: vertical. Default: 1
+
+     --pocs
+          Run POCS partial-Fourier reconstruction (0/1). Default: 1
+
+     --pocs_iters
+          Maximum POCS iterations. Default: 10
+
+     --pocs_tol
+          POCS relative-change stopping tolerance. Default: 1e-4
+
+     --pf_factor
+          Override the detected partial-Fourier factor, e.g. 0.75 or 0.875.
+
+     --pf_side
+          Override the detected truncated side: low or high. low means the most-negative-ky lines are missing.
+
+     --force_pf
+          Proceed when declared and detected geometry disagree (0/1). Default: 0
+
+     --zero_tol
+          Normalised-energy threshold for an empty k-space line. Default: 1e-6
+
+     --nsh
+          Number of subvoxel shifts. Default: 25
+
+     --minW
+          Minimum window size. Default: 1
+
+     --maxW
+          Maximum window size. Default: 3
+
+     --ncores
+          Number of cores to use.
+
+     --disable_itk_threads
+          Pin ITK to a single thread (0/1). Default: 0
+
 ##  TORTOISEBMatrixToBT
 Usage: TORTOISEBMatrixToBT bmatrix_file
 
