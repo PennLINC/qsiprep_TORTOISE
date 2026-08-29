@@ -423,6 +423,119 @@ ImageType3D::Pointer UnRingFull(ImageType3D::Pointer input_img, my_plans_struct 
 }
 
 
+// Complex-valued variant of UnRingFull. unring_2d already carries both
+// components through its fftw_complex buffers, so this differs from the real
+// version only in the marshalling: the imaginary channel is read from the
+// input instead of being zeroed, and both components are written back.
+ImageType4DComplex::Pointer UnRingFullComplex(ImageType4DComplex::Pointer input_img, int nsh=25, int minW=1,int maxW=3)
+{
+    typedef itk::ImageDuplicator<ImageType4DComplex> DupType;
+    DupType::Pointer dup= DupType::New();
+    dup->SetInputImage(input_img);
+    dup->Update();
+    ImageType4DComplex::Pointer output_img= dup->GetOutput();
+    ImageType4DComplex::SizeType sz= output_img->GetLargestPossibleRegion().GetSize();
+
+    int dim_sz[4];
+    dim_sz[0] = sz[0];
+    dim_sz[1] = sz[1];
+    dim_sz[2] = 1;
+    dim_sz[3] = 1 ;
+
+    auto stream = (TORTOISE::stream);
+    if(stream)
+        (*stream)<<  "Complex Gibbs ringing correction of volume: " <<  std::flush;
+    else
+        std::cout<<  "Complex Gibbs ringing correction of volume: " <<  std::flush;
+
+    my_plans_struct my_plans;
+    fftw_plan p = fftw_plan_dft_2d(dim_sz[1],dim_sz[0], NULL, NULL, FFTW_FORWARD, FFTW_ESTIMATE);
+    my_plans.p2d = &p;
+    fftw_plan pinv = fftw_plan_dft_2d(dim_sz[1],dim_sz[0], NULL, NULL, FFTW_BACKWARD, FFTW_ESTIMATE);
+    my_plans.pinv2d= &pinv;
+    fftw_plan p_tr = fftw_plan_dft_2d(dim_sz[0],dim_sz[1], NULL, NULL, FFTW_FORWARD, FFTW_ESTIMATE);
+    my_plans.p_tr2d= &p_tr;
+    fftw_plan pinv_tr = fftw_plan_dft_2d(dim_sz[0],dim_sz[1],  NULL, NULL, FFTW_BACKWARD, FFTW_ESTIMATE);
+    my_plans.pinv_tr2d= &pinv_tr;
+
+    fftw_plan p1d = fftw_plan_dft_1d(sz[0], NULL, NULL, FFTW_FORWARD, FFTW_ESTIMATE);
+    fftw_plan pinv1d = fftw_plan_dft_1d(sz[0], NULL, NULL, FFTW_BACKWARD, FFTW_ESTIMATE);
+    fftw_plan p1dtr = fftw_plan_dft_1d(sz[1], NULL, NULL, FFTW_FORWARD, FFTW_ESTIMATE);
+    fftw_plan pinv1dtr = fftw_plan_dft_1d(sz[1], NULL, NULL, FFTW_BACKWARD, FFTW_ESTIMATE);
+    my_plans.p1d=&p1d;
+    my_plans.pinv1d=&pinv1d;
+    my_plans.ptr1d=&p1dtr;
+    my_plans.pinvtr1d= &pinv1dtr;
+
+    #pragma omp parallel for
+    for(int t=0;t<sz[3];t++)
+    {
+        TORTOISE::EnableOMPThread();
+        #pragma omp critical
+        {
+            if(stream)
+                (*stream)<<  t <<", "<< std::flush;
+            else
+                std::cout<<  t <<", "<< std::flush;
+        }
+
+        fftw_complex *data_complex =  (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * sz[0]*sz[1]);
+        fftw_complex *res_complex  =  (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * sz[0]*sz[1]);
+
+        ImageType4DComplex::IndexType index;
+        index[3]=t;
+
+        for (int z=0; z<sz[2]; z++)
+        {
+            index[2]=z;
+            for (int x = 0 ; x < sz[0];x++)
+            {
+                index[0]=x;
+                for (int y = 0 ; y < sz[1];y++)
+                {
+                    index[1]=y;
+                    std::complex<float> v = input_img->GetPixel(index);
+                    data_complex[sz[0]*y+x][0] = (double) v.real();
+                    data_complex[sz[0]*y+x][1] = (double) v.imag();
+                }
+            }
+            unring_2d(data_complex,res_complex, dim_sz,nsh,minW,maxW,&my_plans);
+
+            for (int x = 0 ; x < sz[0];x++)
+            {
+                index[0]=x;
+                for (int y = 0 ; y < sz[1];y++)
+                {
+                    index[1]=y;
+                    std::complex<float> val( (float)res_complex[sz[0]*y+x][0],
+                                             (float)res_complex[sz[0]*y+x][1] );
+                    output_img->SetPixel(index,val);
+                }
+            }
+        }
+
+        fftw_free(data_complex);
+        fftw_free(res_complex);
+        TORTOISE::DisableOMPThread();
+    }
+
+    fftw_destroy_plan(p);
+    fftw_destroy_plan(pinv);
+    fftw_destroy_plan(p_tr);
+    fftw_destroy_plan(pinv_tr);
+
+    fftw_destroy_plan(p1d);
+    fftw_destroy_plan(pinv1d);
+    fftw_destroy_plan(p1dtr);
+    fftw_destroy_plan(pinv1dtr);
+
+    if(stream)
+        (*stream)<< std::endl;
+    else
+        std::cout<< std::endl;
+
+    return output_img;
+}
 
 
 std::vector<ImageType3D::Pointer> SplitImageRows(ImageType3D::Pointer img3d, int split_factor)

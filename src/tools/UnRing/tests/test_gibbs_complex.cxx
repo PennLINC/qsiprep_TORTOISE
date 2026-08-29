@@ -1,5 +1,6 @@
 #include "defines.h"
 #include "TORTOISE.h"
+#include "../unring.h"
 #include "itkImageIOFactory.h"
 #include "itkImageIOBase.h"
 #include <algorithm>
@@ -95,6 +96,78 @@ static int test_complex_io_roundtrip()
     return 0;
 }
 
+// With a zero imaginary channel, unring_2d's imaginary intermediates are all
+// zero, so UnRingFullComplex must reproduce UnRingFull's real output. This is
+// the regression anchor: it is the only way a marshalling error in the complex
+// path can be caught, because such an error is silent on real data.
+static int test_magnitude_equivalence()
+{
+    const int nx = 64, ny = 64, nz = 2, nt = 1;
+
+    ImageType4D::SizeType sz;
+    sz[0] = nx; sz[1] = ny; sz[2] = nz; sz[3] = nt;
+    ImageType4D::IndexType start; start.Fill(0);
+    ImageType4D::RegionType reg(start, sz);
+
+    ImageType4D::Pointer real_img = ImageType4D::New();
+    real_img->SetRegions(reg); real_img->Allocate(); real_img->FillBuffer(0);
+
+    ImageType4DComplex::SizeType csz;
+    csz[0] = nx; csz[1] = ny; csz[2] = nz; csz[3] = nt;
+    ImageType4DComplex::IndexType cstart; cstart.Fill(0);
+    ImageType4DComplex::RegionType creg(cstart, csz);
+
+    ImageType4DComplex::Pointer cplx_img = ImageType4DComplex::New();
+    cplx_img->SetRegions(creg); cplx_img->Allocate();
+
+    // A hard-edged square: the sharpest thing available, so SuShi has ringing
+    // to actually remove and the two paths have something to disagree about.
+    ImageType4D::IndexType ind;
+    ImageType4DComplex::IndexType cind;
+    for (int t = 0; t < nt; t++) {
+        ind[3] = t; cind[3] = t;
+        for (int z = 0; z < nz; z++) {
+            ind[2] = z; cind[2] = z;
+            for (int y = 0; y < ny; y++) {
+                ind[1] = y; cind[1] = y;
+                for (int x = 0; x < nx; x++) {
+                    ind[0] = x; cind[0] = x;
+                    float v = (x >= 22 && x < 42 && y >= 22 && y < 42) ? 100.0f : 0.0f;
+                    real_img->SetPixel(ind, v);
+                    cplx_img->SetPixel(cind, std::complex<float>(v, 0.0f));
+                }
+            }
+        }
+    }
+
+    ImageType4D::Pointer real_out = UnRingFull(real_img, 25, 1, 3);
+    ImageType4DComplex::Pointer cplx_out = UnRingFullComplex(cplx_img, 25, 1, 3);
+
+    double max_rel = 0.0;
+    for (int t = 0; t < nt; t++) {
+        ind[3] = t; cind[3] = t;
+        for (int z = 0; z < nz; z++) {
+            ind[2] = z; cind[2] = z;
+            for (int y = 0; y < ny; y++) {
+                ind[1] = y; cind[1] = y;
+                for (int x = 0; x < nx; x++) {
+                    ind[0] = x; cind[0] = x;
+                    double a = real_out->GetPixel(ind);
+                    double b = cplx_out->GetPixel(cind).real();
+                    double rel = fabs(a - b) / std::max(1.0, fabs(a));
+                    if (rel > max_rel) max_rel = rel;
+                }
+            }
+        }
+    }
+
+    std::cout << "max relative difference: " << max_rel << std::endl;
+    CHECK(max_rel < 1e-9);
+
+    std::cout << "PASS magnitude_equivalence" << std::endl;
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     // Later tasks' tests (unring.h, pocs.h) call TORTOISE::EnableOMPThread(),
@@ -111,6 +184,7 @@ int main(int argc, char *argv[])
     std::string name(argv[1]);
 
     if (name == "complex_io_roundtrip") return test_complex_io_roundtrip();
+    if (name == "magnitude_equivalence") return test_magnitude_equivalence();
 
     std::cerr << "Unknown test: " << name << std::endl;
     return 1;
