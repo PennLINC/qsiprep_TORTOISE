@@ -229,7 +229,6 @@ int main(int argc, char* argv[])
         writeImageD<ImageType4D>(mag, mag_name);
     }
 
-    delete parser;
     return EXIT_SUCCESS;
 }
 
