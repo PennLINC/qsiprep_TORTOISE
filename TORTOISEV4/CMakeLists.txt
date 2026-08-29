@@ -263,6 +263,8 @@ add_test(NAME complex_io_roundtrip COMMAND GibbsComplexTests complex_io_roundtri
 add_test(NAME magnitude_equivalence COMMAND GibbsComplexTests magnitude_equivalence)
 add_test(NAME pf_detection_positive COMMAND GibbsComplexTests pf_detection_positive)
 add_test(NAME pf_detection_negative COMMAND GibbsComplexTests pf_detection_negative)
+add_test(NAME pocs_consistency COMMAND GibbsComplexTests pocs_consistency)
+add_test(NAME pocs_accuracy COMMAND GibbsComplexTests pocs_accuracy)
 
 add_executable(CombineDWIs ../src/tools/CombineDWIs/combine_dwis_main.cxx  ${SOURCES})
 target_link_libraries(CombineDWIs ${ITK_LIBRARIES} ${Boost_LIBRARIES}  )

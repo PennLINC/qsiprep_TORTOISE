@@ -2,6 +2,7 @@
 #include "TORTOISE.h"
 #include "../unring.h"
 #include "../pf_geometry.h"
+#include "../pocs.h"
 #include "itkImageIOFactory.h"
 #include "itkImageIOBase.h"
 #include <algorithm>
@@ -293,6 +294,201 @@ static int test_pf_detection_negative()
     return 0;
 }
 
+// Ground-truth complex phantom: hard-edged structure (so truncation produces
+// real ringing) with a smooth low-frequency phase (the assumption POCS relies
+// on).
+static ImageType4DComplex::Pointer MakePhantom(int nx, int ny)
+{
+    ImageType4DComplex::SizeType sz;
+    sz[0] = nx; sz[1] = ny; sz[2] = 1; sz[3] = 1;
+    ImageType4DComplex::IndexType start; start.Fill(0);
+    ImageType4DComplex::RegionType reg(start, sz);
+    ImageType4DComplex::Pointer img = ImageType4DComplex::New();
+    img->SetRegions(reg);
+    img->Allocate();
+
+    const double two_pi = 6.283185307179586;
+    ImageType4DComplex::IndexType ind; ind[2] = 0; ind[3] = 0;
+    for (int y = 0; y < ny; y++) {
+        ind[1] = y;
+        for (int x = 0; x < nx; x++) {
+            ind[0] = x;
+            double mag = 0.0;
+            if (x >= 16 && x < 48 && y >= 14 && y < 50) mag = 100.0;
+            if (x >= 28 && x < 36 && y >= 26 && y < 38) mag = 40.0;
+            const double ph = 0.5 * cos(two_pi * x / nx) + 0.3 * sin(two_pi * y / ny);
+            img->SetPixel(ind, std::complex<float>((float)(mag * cos(ph)),
+                                                   (float)(mag * sin(ph))));
+        }
+    }
+    return img;
+}
+
+// Zero-fill the given shifted PE band of an image's k-space, in place.
+static void TruncateKSpace(ImageType4DComplex::Pointer img, int band_start, int band_len, int pe_axis)
+{
+    ImageType4DComplex::SizeType sz = img->GetLargestPossibleRegion().GetSize();
+    const int nx = (int)sz[0], ny = (int)sz[1];
+    const int npix = nx * ny;
+
+    fftw_complex *a = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_complex *b = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_plan pf = fftw_plan_dft_2d(ny, nx, a, b, FFTW_FORWARD,  FFTW_ESTIMATE);
+    fftw_plan pb = fftw_plan_dft_2d(ny, nx, b, a, FFTW_BACKWARD, FFTW_ESTIMATE);
+
+    ImageType4DComplex::IndexType ind; ind[2] = 0; ind[3] = 0;
+    for (int y = 0; y < ny; y++) { ind[1] = y;
+        for (int x = 0; x < nx; x++) { ind[0] = x;
+            std::complex<float> v = img->GetPixel(ind);
+            a[nx * y + x][0] = v.real();
+            a[nx * y + x][1] = v.imag();
+        } }
+
+    fftw_execute(pf);
+
+    const int n_pe = (pe_axis == 0) ? nx : ny;
+    for (int s = band_start; s < band_start + band_len; s++) {
+        const int u = ShiftedToUnshifted(s, n_pe);
+        for (int q = 0; q < ((pe_axis == 0) ? ny : nx); q++) {
+            const int idx = (pe_axis == 0) ? (nx * q + u) : (nx * u + q);
+            b[idx][0] = 0.0;
+            b[idx][1] = 0.0;
+        }
+    }
+
+    fftw_execute(pb);
+
+    const double nfac = 1.0 / (double) npix;
+    for (int y = 0; y < ny; y++) { ind[1] = y;
+        for (int x = 0; x < nx; x++) { ind[0] = x;
+            img->SetPixel(ind, std::complex<float>((float)(a[nx * y + x][0] * nfac),
+                                                   (float)(a[nx * y + x][1] * nfac)));
+        } }
+
+    fftw_destroy_plan(pf); fftw_destroy_plan(pb);
+    fftw_free(a); fftw_free(b);
+}
+
+static double MagnitudeRMSE(ImageType4DComplex::Pointer a, ImageType4DComplex::Pointer b)
+{
+    ImageType4DComplex::SizeType sz = a->GetLargestPossibleRegion().GetSize();
+    double acc = 0.0; long n = 0;
+    ImageType4DComplex::IndexType ind; ind[2] = 0; ind[3] = 0;
+    for (int y = 0; y < (int)sz[1]; y++) { ind[1] = y;
+        for (int x = 0; x < (int)sz[0]; x++) { ind[0] = x;
+            const double d = std::abs(a->GetPixel(ind)) - std::abs(b->GetPixel(ind));
+            acc += d * d; n++;
+        } }
+    return sqrt(acc / (double) n);
+}
+
+static int test_pocs_consistency()
+{
+    const int nx = 64, ny = 64, n_missing = 16;
+
+    ImageType4DComplex::Pointer img = MakePhantom(nx, ny);
+    TruncateKSpace(img, 0, n_missing, 1);   // Low side, 6/8
+
+    // Snapshot the measured k-space before POCS.
+    PFGeometry geom = DetectPFGeometry(img, 1, 1e-6f, 8);
+    CHECK(geom.status == PFGeometry::DetectedPF);
+    CHECK(geom.n_missing == n_missing);
+    CHECK(geom.side == PFGeometry::Low);
+
+    const int npix = nx * ny;
+    fftw_complex *a  = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_complex *k0 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_complex *k1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_plan pf = fftw_plan_dft_2d(ny, nx, a, k0, FFTW_FORWARD, FFTW_ESTIMATE);
+
+    ImageType4DComplex::IndexType ind; ind[2] = 0; ind[3] = 0;
+    for (int y = 0; y < ny; y++) { ind[1] = y;
+        for (int x = 0; x < nx; x++) { ind[0] = x;
+            std::complex<float> v = img->GetPixel(ind);
+            a[nx * y + x][0] = v.real(); a[nx * y + x][1] = v.imag();
+        } }
+    fftw_execute(pf);
+
+    POCSParams params;
+    POCSResult res = ApplyPOCS(img, geom, 1, params);
+    std::cout << "POCS iters=" << res.iters_run
+              << " final_rel_change=" << res.final_rel_change << std::endl;
+    CHECK(res.iters_run > 0);
+
+    for (int y = 0; y < ny; y++) { ind[1] = y;
+        for (int x = 0; x < nx; x++) { ind[0] = x;
+            std::complex<float> v = img->GetPixel(ind);
+            a[nx * y + x][0] = v.real(); a[nx * y + x][1] = v.imag();
+        } }
+    fftw_execute_dft(pf, a, k1);
+
+    double maxmag = 0.0;
+    for (int q = 0; q < npix; q++)
+        maxmag = std::max(maxmag, sqrt(k0[q][0] * k0[q][0] + k0[q][1] * k0[q][1]));
+
+    std::vector<char> acquired; std::vector<double> window;
+    BuildPOCSMasks(geom, acquired, window);
+
+    double worst = 0.0;
+    for (int ky = 0; ky < ny; ky++) {
+        if (!acquired[ky]) continue;
+        for (int kx = 0; kx < nx; kx++) {
+            const int q = nx * ky + kx;
+            const double dr = k1[q][0] - k0[q][0];
+            const double di = k1[q][1] - k0[q][1];
+            worst = std::max(worst, sqrt(dr * dr + di * di) / maxmag);
+        }
+    }
+    std::cout << "worst acquired-line deviation: " << worst << std::endl;
+    CHECK(worst < 1e-5);
+
+    fftw_destroy_plan(pf);
+    fftw_free(a); fftw_free(k0); fftw_free(k1);
+
+    // Full k-space must be left strictly alone.
+    {
+        ImageType4DComplex::Pointer full = MakePhantom(nx, ny);
+        ImageType4DComplex::Pointer copy = MakePhantom(nx, ny);
+        PFGeometry g = DetectPFGeometry(full, 1, 1e-6f, 8);
+        CHECK(!g.is_partial_fourier);
+        POCSResult r = ApplyPOCS(full, g, 1, params);
+        CHECK(r.iters_run == 0);
+        CHECK(MagnitudeRMSE(full, copy) == 0.0);
+    }
+
+    std::cout << "PASS pocs_consistency" << std::endl;
+    return 0;
+}
+
+static int test_pocs_accuracy()
+{
+    const int nx = 64, ny = 64, n_missing = 16;
+
+    ImageType4DComplex::Pointer truth = MakePhantom(nx, ny);
+    ImageType4DComplex::Pointer zf    = MakePhantom(nx, ny);
+    TruncateKSpace(zf, 0, n_missing, 1);
+
+    ImageType4DComplex::Pointer pocs = MakePhantom(nx, ny);
+    TruncateKSpace(pocs, 0, n_missing, 1);
+
+    PFGeometry geom = DetectPFGeometry(pocs, 1, 1e-6f, 8);
+    CHECK(geom.status == PFGeometry::DetectedPF);
+
+    POCSParams params;
+    ApplyPOCS(pocs, geom, 1, params);
+
+    const double rmse_zf   = MagnitudeRMSE(zf, truth);
+    const double rmse_pocs = MagnitudeRMSE(pocs, truth);
+    std::cout << "RMSE zero-filled=" << rmse_zf << "  POCS=" << rmse_pocs
+              << "  ratio=" << (rmse_pocs / rmse_zf) << std::endl;
+
+    CHECK(rmse_zf > 0.0);
+    CHECK(rmse_pocs < 0.9 * rmse_zf);
+
+    std::cout << "PASS pocs_accuracy" << std::endl;
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     // Later tasks' tests (unring.h, pocs.h) call TORTOISE::EnableOMPThread(),
@@ -312,6 +508,8 @@ int main(int argc, char *argv[])
     if (name == "magnitude_equivalence") return test_magnitude_equivalence();
     if (name == "pf_detection_positive") return test_pf_detection_positive();
     if (name == "pf_detection_negative") return test_pf_detection_negative();
+    if (name == "pocs_consistency") return test_pocs_consistency();
+    if (name == "pocs_accuracy")    return test_pocs_accuracy();
 
     std::cerr << "Unknown test: " << name << std::endl;
     return 1;
