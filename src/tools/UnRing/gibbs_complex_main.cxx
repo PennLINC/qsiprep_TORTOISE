@@ -119,100 +119,130 @@ int main(int argc, char* argv[])
     // After the transpose the phase-encode axis is always 1.
     const int pe_axis = 1;
 
+    // ------------------------------------------------------------------
+    // Diagnostics. These REPORT; they no longer decide.
+    //
+    // The partial-Fourier geometry comes from acquisition metadata via --pf_factor: a
+    // BIDS sidecar knows the acquired factor, and a reconstructed image does not
+    // reliably reveal it. Whether the exported image still LOOKS zero-filled is a
+    // separate question, answered by the conjugate-mirror energy ratio. POCS is enabled
+    // only on explicit request, never by image-derived detection alone -- re-running a
+    // partial-Fourier reconstruction on top of the scanner's would corrupt data that was
+    // already correct.
+    // ------------------------------------------------------------------
     PFGeometry geom = DetectPFGeometry(dwis, pe_axis, zero_tol, 8);
 
-    if(geom.status==PFGeometry::ImplausibleFactor && !force_pf)
-    {
-        std::cout<<"Detected a k-space zero band of "<<geom.n_missing<<" lines out of "
-                 <<geom.n_pe<<" (factor "<<geom.factor<<"), which is below 0.5 and "
-                 <<"implausible for partial Fourier. Exiting..."<<std::endl;
-        return EXIT_FAILURE;
-    }
+    PFDiagnostics diag;
+    diag.valid = false;
+    if(pf_factor_arg>0)
+        diag = ComputePFDiagnostics(dwis, pe_axis, pf_factor_arg, 8, 16);
 
-    if(pf_factor_arg>0 || pf_side_arg!=std::string(""))
-    {
-        PFGeometry declared = geom;
-        declared.status = PFGeometry::DetectedPF;
-        declared.is_partial_fourier = true;
-
-        if(pf_factor_arg>0)
-        {
-            declared.factor = pf_factor_arg;
-            declared.n_missing = (int)(llround((1.-(double)pf_factor_arg)*(double)declared.n_pe));
-        }
-        if(pf_side_arg==std::string("low"))
-            declared.side = PFGeometry::Low;
-        if(pf_side_arg==std::string("high"))
-            declared.side = PFGeometry::High;
-
-        bool mismatch = (!geom.is_partial_fourier)
-                        || (geom.n_missing != declared.n_missing)
-                        || (geom.side != declared.side);
-
-        if(mismatch)
-        {
-            std::cout<<"Declared and detected partial-Fourier geometry disagree."<<std::endl;
-            std::cout<<"  detected: pf="<<(geom.is_partial_fourier?"yes":"no")
-                     <<" n_missing="<<geom.n_missing<<" factor="<<geom.factor
-                     <<" side="<<(geom.side==PFGeometry::Low?"low":"high")<<std::endl;
-            std::cout<<"  declared: n_missing="<<declared.n_missing
-                     <<" factor="<<declared.factor
-                     <<" side="<<(declared.side==PFGeometry::Low?"low":"high")<<std::endl;
-            if(!force_pf)
-            {
-                std::cout<<"Pass --force_pf 1 to proceed with the declared geometry. Exiting..."<<std::endl;
-                return EXIT_FAILURE;
-            }
-            std::cout<<"--force_pf given: proceeding with the declared geometry."<<std::endl;
-        }
-        geom = declared;
-    }
-
-    if(geom.is_partial_fourier)
-    {
-        std::cout<<"Partial Fourier detected: "<<geom.n_missing<<" of "<<geom.n_pe
-                 <<" k-space lines empty (factor "<<geom.factor<<", "
-                 <<(geom.side==PFGeometry::Low?"low":"high")<<" side, band energy ratio "
-                 <<geom.zero_band_energy_ratio<<")."<<std::endl;
-    }
-    else if(geom.status==PFGeometry::SymmetricBand)
-    {
-        std::cout<<"Zero-filled bands found at BOTH edges of k-space. This looks like "
-                 <<"symmetric zero-padding (matrix interpolation), not partial Fourier. "
-                 <<"Skipping POCS."<<std::endl;
-    }
-    else if(geom.status==PFGeometry::ImplausibleFactor)
-    {
-        std::cout<<"Detected a k-space zero band of "<<geom.n_missing<<" lines out of "
-                 <<geom.n_pe<<" (factor "<<geom.factor<<"), which is below 0.5 and "
-                 <<"implausible for partial Fourier. --force_pf was given but no "
-                 <<"--pf_factor/--pf_side was supplied to override the geometry, so "
-                 <<"proceeding without partial-Fourier reconstruction. Skipping POCS."<<std::endl;
-    }
+    std::cout<<"---- partial-Fourier diagnostics ----"<<std::endl;
+    if(pf_factor_arg>0)
+        std::cout<<"  Declared PF factor:       "<<pf_factor_arg<<std::endl;
     else
+        std::cout<<"  Declared PF factor:       none given (pass --pf_factor from the BIDS sidecar)"<<std::endl;
+
+    if(diag.valid)
     {
-        std::cout<<"No partial-Fourier zero band found. The data does not look "
-                 <<"zero-filled -- it may be full Fourier, or already reconstructed "
-                 <<"with homodyne or POCS."<<std::endl;
+        std::cout<<"  Expected missing lines:   "<<diag.n_missing<<" of "<<diag.n_pe<<std::endl;
+        std::cout<<"  Likely missing side:      "<<(diag.side==PFGeometry::Low?"low":"high")
+                 <<" (asymmetry "<<diag.side_asymmetry<<"x)"<<std::endl;
+        std::cout<<"  Band/mirror energy:       "<<diag.mirror_ratio
+                 <<" (p10 "<<diag.mirror_p10<<", p90 "<<diag.mirror_p90
+                 <<", n="<<diag.n_samples<<")"<<std::endl;
+        std::cout<<"  Zero-fill compatibility:  "
+                 <<(diag.zero_fill_compatible ? "strong -- consistent with zero filling"
+                                              : "weak -- does NOT look zero-filled")<<std::endl;
+    }
+    else if(pf_factor_arg>0)
+    {
+        std::cout<<"  Zero-fill compatibility:  not computable for the declared factor"<<std::endl;
     }
 
-    if(do_pocs && geom.is_partial_fourier)
+    if(geom.status==PFGeometry::SymmetricBand)
+        std::cout<<"  Literal zero-band scan:   empty bands at BOTH edges -- looks like symmetric "
+                 <<"zero-padding (matrix interpolation), not partial Fourier"<<std::endl;
+    else if(geom.is_partial_fourier)
+        std::cout<<"  Literal zero-band scan:   "<<geom.n_missing<<" exactly-empty lines, "
+                 <<(geom.side==PFGeometry::Low?"low":"high")<<" side"<<std::endl;
+    else
+        std::cout<<"  Literal zero-band scan:   no exactly-empty band (normal for real data)"<<std::endl;
+    std::cout<<"-------------------------------------"<<std::endl;
+
+    // ------------------------------------------------------------------
+    // POCS: opt-in, and only with declared geometry.
+    // ------------------------------------------------------------------
+    bool run_pocs = false;
+    PFGeometry pocs_geom;
+    pocs_geom.status = PFGeometry::DetectedPF;
+    pocs_geom.is_partial_fourier = true;
+    pocs_geom.n_pe = 0; pocs_geom.n_missing = 0; pocs_geom.factor = 1.f;
+    pocs_geom.side = PFGeometry::Low; pocs_geom.zero_band_energy_ratio = 0.f;
+
+    if(do_pocs)
     {
-        std::cout<<"Running POCS partial-Fourier reconstruction..."<<std::endl;
-        POCSResult res = ApplyPOCS(dwis, geom, pe_axis, pocs_params);
+        if(pf_factor_arg<=0)
+        {
+            std::cout<<"--pocs 1 requires --pf_factor, the partial-Fourier factor from the "
+                     <<"acquisition metadata. POCS is never enabled from image-derived detection "
+                     <<"alone: running a partial-Fourier reconstruction on data the scanner has "
+                     <<"already reconstructed corrupts it. Exiting..."<<std::endl;
+            return EXIT_FAILURE;
+        }
+        if(!diag.valid)
+        {
+            std::cout<<"Could not evaluate zero-fill compatibility for --pf_factor "<<pf_factor_arg
+                     <<". Exiting..."<<std::endl;
+            return EXIT_FAILURE;
+        }
+        if(!diag.zero_fill_compatible && !force_pf)
+        {
+            std::cout<<"Refusing to run POCS. The un-acquired band holds "<<diag.mirror_ratio
+                     <<" of its conjugate mirror's energy, above the "<<PF_ZEROFILL_MAX_MIRROR_RATIO
+                     <<" threshold, so this image does not look zero-filled -- the scanner has "
+                     <<"most likely reconstructed it already and POCS would overwrite that "
+                     <<"reconstruction with synthesised content. Pass --force_pf 1 to override. "
+                     <<"Exiting..."<<std::endl;
+            return EXIT_FAILURE;
+        }
+        if(!diag.zero_fill_compatible)
+            std::cout<<"--force_pf given: running POCS despite weak zero-fill compatibility."<<std::endl;
+
+        pocs_geom.n_pe = diag.n_pe;
+        pocs_geom.n_missing = diag.n_missing;
+        pocs_geom.factor = pf_factor_arg;
+        pocs_geom.side = diag.side;
+        pocs_geom.zero_band_energy_ratio = diag.mirror_ratio;
+
+        if(pf_side_arg!=std::string(""))
+        {
+            const PFGeometry::Side declared_side =
+                (pf_side_arg==std::string("low")) ? PFGeometry::Low : PFGeometry::High;
+            if(declared_side != diag.side)
+                std::cout<<"NOTE: --pf_side "<<pf_side_arg<<" overrides the inferred side ("
+                         <<(diag.side==PFGeometry::Low?"low":"high")<<")."<<std::endl;
+            pocs_geom.side = declared_side;
+        }
+        run_pocs = true;
+    }
+
+    if(run_pocs)
+    {
+        std::cout<<"Running POCS partial-Fourier reconstruction ("<<pocs_geom.n_missing
+                 <<" lines, "<<(pocs_geom.side==PFGeometry::Low?"low":"high")<<" side)..."<<std::endl;
+        POCSResult res = ApplyPOCS(dwis, pocs_geom, pe_axis, pocs_params);
         std::cout<<"POCS finished after at most "<<res.iters_run
                  <<" iterations, final relative change "<<res.final_rel_change<<"."<<std::endl;
+        if(res.final_rel_change > pocs_params.tol)
+            std::cout<<"WARNING: POCS reached the iteration cap without meeting the requested "
+                     <<"tolerance ("<<pocs_params.tol<<"). Consider raising --pocs_iters."<<std::endl;
     }
-    else if(do_pocs && !geom.is_partial_fourier)
+    else if(diag.valid && diag.zero_fill_compatible)
     {
-        std::cout<<"Skipping POCS."<<std::endl;
-    }
-    else if(!do_pocs && geom.is_partial_fourier)
-    {
-        std::cout<<"WARNING: POCS disabled on partial-Fourier data. Residual "
-                 <<"partial-Fourier ringing may remain along the phase encoding "
-                 <<"direction. The magnitude-domain RPG method in the Gibbs command "
-                 <<"addresses that case."<<std::endl;
+        std::cout<<"POCS not enabled. This image IS compatible with zero filling, so residual "
+                 <<"partial-Fourier ringing may remain along the phase encoding direction. The "
+                 <<"magnitude-domain RPG method in the Gibbs command addresses that case."<<std::endl;
     }
 
     dwis = UnRingFullComplex(dwis, nsh, minW, maxW);

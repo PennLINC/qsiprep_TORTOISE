@@ -614,6 +614,63 @@ static int test_complex_phase_equivariance()
     return 0;
 }
 
+
+// The zero-fill compatibility diagnostic. Unlike DetectPFGeometry it takes the band width
+// from the DECLARED partial-Fourier factor and measures against the conjugate mirror, so it
+// is scale-free: it does not care where the DC line sits or what the noise floor is.
+static int test_pf_diagnostics()
+{
+    const int nx = 64, ny = 64, nm = 16;   // 6/8 partial Fourier along y
+
+    // Zero-filled at the low end: the band should read as essentially empty.
+    {
+        ImageType4DComplex::Pointer img = MakeBandedImage(nx, ny, 0, nm, 1);
+        PFDiagnostics d = ComputePFDiagnostics(img, 1, 0.75f, 8, 16);
+        std::cout << "  zero-filled low: ratio=" << d.mirror_ratio
+                  << " side=" << (int) d.side << " asym=" << d.side_asymmetry
+                  << " compatible=" << d.zero_fill_compatible << std::endl;
+        CHECK(d.valid);
+        CHECK(d.n_missing == nm);
+        CHECK(d.side == PFGeometry::Low);
+        CHECK(d.mirror_ratio < 0.05f);
+        CHECK(d.zero_fill_compatible);
+        CHECK(d.side_asymmetry > 5.0f);
+    }
+
+    // Same, truncated at the high end: the inferred side must follow.
+    {
+        ImageType4DComplex::Pointer img = MakeBandedImage(nx, ny, ny - nm, nm, 1);
+        PFDiagnostics d = ComputePFDiagnostics(img, 1, 0.75f, 8, 16);
+        std::cout << "  zero-filled high: ratio=" << d.mirror_ratio
+                  << " side=" << (int) d.side << std::endl;
+        CHECK(d.valid);
+        CHECK(d.side == PFGeometry::High);
+        CHECK(d.zero_fill_compatible);
+    }
+
+    // Full k-space: nothing is missing, so the "band" holds as much as its mirror and the
+    // image must NOT be reported as compatible with zero filling.
+    {
+        ImageType4DComplex::Pointer img = MakeBandedImage(nx, ny, 0, 0, 1);
+        PFDiagnostics d = ComputePFDiagnostics(img, 1, 0.75f, 8, 16);
+        std::cout << "  full k-space:    ratio=" << d.mirror_ratio
+                  << " compatible=" << d.zero_fill_compatible << std::endl;
+        CHECK(d.valid);
+        CHECK(d.mirror_ratio > 0.2f);
+        CHECK(!d.zero_fill_compatible);
+    }
+
+    // A nonsensical declared factor is rejected rather than silently producing a band.
+    {
+        ImageType4DComplex::Pointer img = MakeBandedImage(nx, ny, 0, nm, 1);
+        CHECK(!ComputePFDiagnostics(img, 1, 1.0f,  8, 16).valid);   // nothing missing
+        CHECK(!ComputePFDiagnostics(img, 1, 0.25f, 8, 16).valid);   // more than half missing
+    }
+
+    std::cout << "PASS pf_diagnostics" << std::endl;
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     // Later tasks' tests (unring.h, pocs.h) call TORTOISE::EnableOMPThread(),
@@ -636,6 +693,7 @@ int main(int argc, char *argv[])
     if (name == "pocs_consistency") return test_pocs_consistency();
     if (name == "pocs_accuracy")    return test_pocs_accuracy();
     if (name == "complex_phase_equivariance") return test_complex_phase_equivariance();
+    if (name == "pf_diagnostics") return test_pf_diagnostics();
 
     std::cerr << "Unknown test: " << name << std::endl;
     return 1;

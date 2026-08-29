@@ -585,9 +585,10 @@ rather than as an implementation failure.
 
 ---
 
-## Blocking side issue: the detector threshold
+## RESOLVED: the detector threshold (was blocking)
 
-Independent of the POCS question, and **blocking for the automatic-detection path**.
+**Fixed.** The description below is retained because it explains the failure mode and the
+measurements that exposed it; the resolution is at the end of this section.
 
 `DetectPFGeometry` (`pf_geometry.h:117-123`) normalises the k-space energy profile by its
 **maximum**, which is the DC line. `zero_tol` is therefore effectively "fraction of DC
@@ -614,6 +615,36 @@ Note the mirror test is itself imperfect — conjugate symmetry holds exactly on
 real-valued images, and these are genuinely complex. It is nonetheless far more robust than
 a DC-relative threshold, and the observed suppression is one-sided, matches the declared
 width, and flips with phase-encode direction, which noise would not do.
+
+### Resolution
+
+Detection was demoted from decision-maker to diagnostic, and POCS made explicit opt-in.
+
+- **`ComputePFDiagnostics`** (`pf_geometry.h`) takes the band width from the **declared**
+  partial-Fourier factor rather than from a threshold, and measures the un-acquired band
+  against its **conjugate mirror**. Ratios are formed per slice and per volume and aggregated
+  by median with p10/p90, so a single pooled number cannot mislead and high-signal b=0 volumes
+  cannot dominate. Both candidate sides are measured and the more suppressed one is inferred,
+  with the asymmetry reported as confidence. The Nyquist line, which has no mirror, is
+  excluded. Threshold for "compatible with zero filling" is a mirror ratio below 0.05.
+- **POCS is now opt-in** (`--pocs` default `0`) and **requires `--pf_factor`**. It is never
+  enabled from image-derived detection alone. If the compatibility check fails, POCS is refused
+  with the measured ratio in the message; `--force_pf 1` overrides.
+- **Every run prints a diagnostics block** — declared factor, expected missing lines, inferred
+  side and asymmetry, band/mirror ratio with spread, compatibility verdict, plus the old
+  literal-empty-band scan as one informational line.
+- `DetectPFGeometry` is retained for that informational line (it still usefully reports the
+  symmetric-zero-padding case) but no longer gates anything.
+
+Separation achieved on synthetic data, `pf_diagnostics` test: **2e-15** for a zero-filled band
+versus **0.9995** for full k-space. On the real NIBS AP run the median ratio is **0.0139**
+(p10 0.0066, p90 0.0269, n=36 samples, side inferred low with 4868x asymmetry), agreeing with
+the independent Python analysis in §3.2 — and POCS now correctly *runs* on data the old
+DC-relative test wrongly declined.
+
+Also surfaced by this work: the driver now warns when POCS reaches its iteration cap without
+meeting `--pocs_tol`, which is what happens on real data (relative change 0.005 against a
+requested 1e-4). That is item 7 in §6.
 
 ---
 

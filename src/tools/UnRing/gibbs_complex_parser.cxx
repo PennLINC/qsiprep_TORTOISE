@@ -69,7 +69,7 @@ void GibbsComplex_PARSER::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
-        std::string description = std::string( "Run POCS partial-Fourier reconstruction before unringing (0/1). Skipped automatically if the data does not look zero-filled. Default: 1" );
+        std::string description = std::string( "Run POCS partial-Fourier reconstruction before unringing (0/1). Opt-in: requires --pf_factor, and is refused unless the k-space conjugate-mirror ratio shows the image is compatible with zero filling. Default: 0" );
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "pocs");
         option->SetDescription( description );
@@ -90,21 +90,21 @@ void GibbsComplex_PARSER::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
-        std::string description = std::string( "Override the detected partial-Fourier factor (float, e.g. 0.75 or 0.875). By default the factor is detected from the k-space zero band." );
+        std::string description = std::string( "Partial-Fourier factor from the acquisition metadata, e.g. 0.75 or 0.875. Must be in (0.5, 1.0]. REQUIRED for --pocs 1; also enables the zero-fill compatibility diagnostic." );
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "pf_factor");
         option->SetDescription( description );
         this->AddOption( option );
     }
     {
-        std::string description = std::string( "Override the detected truncated side of k-space: low or high. low means the most-negative-ky lines are missing." );
+        std::string description = std::string( "Override the inferred truncated side of k-space: low or high. low means the most-negative-ky lines are missing. Inferred from the data when omitted." );
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "pf_side");
         option->SetDescription( description );
         this->AddOption( option );
     }
     {
-        std::string description = std::string( "Proceed even when the declared and detected partial-Fourier geometry disagree, using the declared values (0/1). Default: 0" );
+        std::string description = std::string( "Run POCS even when the zero-fill compatibility check says the image does not look zero-filled (0/1). Default: 0" );
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "force_pf");
         option->SetDescription( description );
@@ -196,7 +196,7 @@ bool GibbsComplex_PARSER::getDoPOCS()
     if(option->GetNumberOfFunctions())
         return (bool)(atoi(option->GetFunction(0)->GetName().c_str()));
     else
-        return true;
+        return false;
 }
 
 int GibbsComplex_PARSER::getPOCSIters()

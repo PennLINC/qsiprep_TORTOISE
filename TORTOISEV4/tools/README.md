@@ -116,7 +116,9 @@ Usage: GibbsComplex -i input_complex_nifti -o output_complex_nifti [options]
 
 Partial-Fourier-aware Gibbs ringing correction for complex-valued DWIs. Reads a complex-valued (COMPLEX64 or COMPLEX128) 4D NIFTI, optionally restores the un-acquired partial-Fourier region of k-space with POCS, and applies the Kellner et al. local subvoxel-shift method to the complex data rather than to its magnitude. Lee, Novikov and Fieremans (MRM 2021) show this is more robust than magnitude-domain RPG when phase information is available, particularly at aggressive partial-Fourier factors.
 
-The partial-Fourier factor and the truncated side of k-space are detected automatically from the zero-filled band. Data with no zero band -- full-Fourier acquisitions, or reconstructions where the vendor already applied homodyne or POCS -- is reported as such and the POCS stage is skipped, so the command will not apply a second partial-Fourier reconstruction on top of the scanner's.
+POCS is opt-in and never enabled from image-derived detection alone. It requires --pf_factor, the partial-Fourier factor from the acquisition metadata (the BIDS sidecar knows the acquired factor; a reconstructed image does not reliably reveal it). Before running, the command measures how much energy the un-acquired band holds relative to its conjugate mirror in k-space: near zero means the image is still zero-filled and POCS applies, near one means the scanner already reconstructed it and POCS would overwrite that reconstruction with synthesised content. POCS is refused in the latter case unless --force_pf is given. The truncated side is inferred from the data, which is a reliable image-derived quantity, and can be overridden with --pf_side.
+
+Every run prints a partial-Fourier diagnostics block reporting the declared factor, the expected number of missing lines, the inferred side and its asymmetry, the band/mirror energy ratio with its p10-p90 spread, and the resulting zero-fill compatibility. These are reported whether or not POCS is enabled.
 
 For magnitude-only data, use the Gibbs command, which implements the magnitude-domain RPG method.
 
@@ -133,7 +135,8 @@ For magnitude-only data, use the Gibbs command, which implements the magnitude-d
           Phase encoding direction. 0: horizontal, 1: vertical. Default: 1
 
      --pocs
-          Run POCS partial-Fourier reconstruction (0/1). Default: 1
+          Run POCS partial-Fourier reconstruction (0/1). Opt-in: requires --pf_factor and a
+          passing zero-fill compatibility check. Default: 0
 
      --pocs_iters
           Maximum POCS iterations. Default: 10
@@ -142,16 +145,20 @@ For magnitude-only data, use the Gibbs command, which implements the magnitude-d
           POCS relative-change stopping tolerance. Default: 1e-4
 
      --pf_factor
-          Override the detected partial-Fourier factor, e.g. 0.75 or 0.875.
+          Partial-Fourier factor from the acquisition metadata, e.g. 0.75 or 0.875. Must be in
+          (0.5, 1.0]. REQUIRED for --pocs 1; also enables the zero-fill compatibility diagnostic.
 
      --pf_side
-          Override the detected truncated side: low or high. low means the most-negative-ky lines are missing.
+          Override the inferred truncated side: low or high. low means the most-negative-ky lines
+          are missing. Inferred from the data when omitted.
 
      --force_pf
-          Proceed when declared and detected geometry disagree (0/1). Default: 0
+          Run POCS even when the zero-fill compatibility check says the image does not look
+          zero-filled (0/1). Default: 0
 
      --zero_tol
-          Normalised-energy threshold for an empty k-space line. Default: 1e-6
+          Threshold for the informational literal-empty-band scan, as a fraction of peak
+          k-space energy. Does not gate POCS. Default: 1e-6
 
      --nsh
           Number of subvoxel shifts. Default: 25
