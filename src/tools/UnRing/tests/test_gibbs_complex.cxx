@@ -228,6 +228,64 @@ static ImageType4DComplex::Pointer MakeBandedImage(int nx, int ny, int band_star
     return img;
 }
 
+// Build a complex image whose k-space has exact-zero bands of edge_len lines
+// at BOTH edges of shifted PE space -- the signature of symmetric zero-
+// padding / matrix-interpolated ("ZIP") reconstructions, as opposed to the
+// single-edge band of true partial-Fourier truncation.
+static ImageType4DComplex::Pointer MakeSymmetricBandedImage(int nx, int ny, int edge_len,
+                                                             int pe_axis)
+{
+    const int npix = nx * ny;
+    fftw_complex *K  = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_complex *im = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * npix);
+    fftw_plan p = fftw_plan_dft_2d(ny, nx, K, im, FFTW_BACKWARD, FFTW_ESTIMATE);
+
+    const int n_pe = (pe_axis == 0) ? nx : ny;
+
+    for (int sy = 0; sy < ny; sy++) {
+        for (int sx = 0; sx < nx; sx++) {
+            const int uy = ShiftedToUnshifted(sy, ny);
+            const int ux = ShiftedToUnshifted(sx, nx);
+            const int pe = (pe_axis == 0) ? sx : sy;
+
+            double re = 0.0, imv = 0.0;
+            if (pe >= edge_len && pe < n_pe - edge_len) {
+                const double dy = sy - ny / 2;
+                const double dx = sx - nx / 2;
+                const double r = sqrt(dx * dx + dy * dy) + 1.0;
+                re  = cos(0.7 * sx + 0.3 * sy) / r;
+                imv = sin(0.4 * sx - 0.9 * sy) / r;
+            }
+            K[nx * uy + ux][0] = re;
+            K[nx * uy + ux][1] = imv;
+        }
+    }
+    fftw_execute(p);
+
+    ImageType4DComplex::SizeType sz;
+    sz[0] = nx; sz[1] = ny; sz[2] = 1; sz[3] = 1;
+    ImageType4DComplex::IndexType start; start.Fill(0);
+    ImageType4DComplex::RegionType reg(start, sz);
+    ImageType4DComplex::Pointer img = ImageType4DComplex::New();
+    img->SetRegions(reg);
+    img->Allocate();
+
+    ImageType4DComplex::IndexType ind; ind[2] = 0; ind[3] = 0;
+    for (int y = 0; y < ny; y++) {
+        ind[1] = y;
+        for (int x = 0; x < nx; x++) {
+            ind[0] = x;
+            img->SetPixel(ind, std::complex<float>((float)im[nx * y + x][0],
+                                                   (float)im[nx * y + x][1]));
+        }
+    }
+
+    fftw_destroy_plan(p);
+    fftw_free(K);
+    fftw_free(im);
+    return img;
+}
+
 static int test_pf_detection_positive()
 {
     struct Case { int nx, ny, n_missing; PFGeometry::Side side; int pe_axis; const char *label; };
@@ -288,6 +346,19 @@ static int test_pf_detection_negative()
         PFGeometry g = DetectPFGeometry(img, 1, 1e-6f, 8);
         CHECK(!g.is_partial_fourier);
         CHECK(g.status == PFGeometry::ImplausibleFactor);
+    }
+
+    // Zero bands at BOTH edges (ZIP / matrix-interpolated reconstruction,
+    // e.g. n_pe=256 acquired [64,191]). This must NOT be reported as
+    // partial Fourier -- ApplyPOCS would otherwise pin the genuinely empty
+    // high-ky band to zero while synthesising invented content into the
+    // low-ky band. n_pe=64 with 8 zero lines at each end (acquired [8,55])
+    // is the test-sized analogue of the 256/128 ZIP case.
+    {
+        ImageType4DComplex::Pointer img = MakeSymmetricBandedImage(64, 64, 8, 1);
+        PFGeometry g = DetectPFGeometry(img, 1, 1e-6f, 8);
+        CHECK(!g.is_partial_fourier);
+        CHECK(g.status == PFGeometry::SymmetricBand);
     }
 
     std::cout << "PASS pf_detection_negative" << std::endl;

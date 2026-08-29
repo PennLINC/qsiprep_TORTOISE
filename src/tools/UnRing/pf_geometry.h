@@ -20,6 +20,7 @@ struct PFGeometry
     {
         NoZeroBand,        // full k-space, or a reconstruction that already filled it
         InteriorBand,      // empty band away from the edges: not PF truncation
+        SymmetricBand,     // distinct zero bands at BOTH edges: zero-padding/ZIP, not PF
         ImplausibleFactor, // more than half of k-space missing
         DetectedPF
     };
@@ -141,6 +142,29 @@ inline PFGeometry DetectPFGeometry(ImageType4DComplex::Pointer img, int pe_axis,
 
     if (at_low && at_high)
         return geom;                       // whole profile empty
+
+    // Symmetric zero-padding (e.g. ZIP / matrix-interpolated reconstructions)
+    // leaves a distinct exact-zero band at BOTH edges of shifted k-space --
+    // not just the longest one picked up above. Only looking at whether the
+    // single longest run touches both edges (the at_low && at_high case just
+    // above) misses this, because the shorter opposite-edge run never became
+    // "best". Scan the opposite edge explicitly for its own run.
+    if (at_low != at_high) {
+        int opp_len = 0;
+        if (at_low) {
+            // best run touches the low edge; scan inward from the high edge.
+            for (int i = n_pe - 1; i >= 0 && shifted[i] <= (double) zero_tol; i--)
+                opp_len++;
+        } else {
+            // best run touches the high edge; scan inward from the low edge.
+            for (int i = 0; i < n_pe && shifted[i] <= (double) zero_tol; i++)
+                opp_len++;
+        }
+        if (opp_len >= 2) {
+            geom.status = PFGeometry::SymmetricBand;
+            return geom;
+        }
+    }
 
     // Asymmetric truncation always puts the empty band against one edge of
     // shifted k-space. A band in the interior is something else, and guessing

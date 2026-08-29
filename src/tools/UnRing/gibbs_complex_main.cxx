@@ -175,6 +175,20 @@ int main(int argc, char* argv[])
                  <<(geom.side==PFGeometry::Low?"low":"high")<<" side, band energy ratio "
                  <<geom.zero_band_energy_ratio<<")."<<std::endl;
     }
+    else if(geom.status==PFGeometry::SymmetricBand)
+    {
+        std::cout<<"Zero-filled bands found at BOTH edges of k-space. This looks like "
+                 <<"symmetric zero-padding (matrix interpolation), not partial Fourier. "
+                 <<"Skipping POCS."<<std::endl;
+    }
+    else if(geom.status==PFGeometry::ImplausibleFactor)
+    {
+        std::cout<<"Detected a k-space zero band of "<<geom.n_missing<<" lines out of "
+                 <<geom.n_pe<<" (factor "<<geom.factor<<"), which is below 0.5 and "
+                 <<"implausible for partial Fourier. --force_pf was given but no "
+                 <<"--pf_factor/--pf_side was supplied to override the geometry, so "
+                 <<"proceeding without partial-Fourier reconstruction. Skipping POCS."<<std::endl;
+    }
     else
     {
         std::cout<<"No partial-Fourier zero band found. The data does not look "
@@ -210,7 +224,20 @@ int main(int argc, char* argv[])
     dwis->SetSpacing(orig_spc);
     dwis->SetOrigin(orig_org);
 
-    writeImageD<ImageType4DComplex>(dwis, output_name);
+    // The complex output is the primary deliverable and is written first, so
+    // a subsequent magnitude write failure can never lose it. An unwritable
+    // path (bad directory, permissions, disk full, ...) must produce a clear
+    // error and a non-zero exit, not let the ITK exception escape main() and
+    // abort the process.
+    try
+    {
+        writeImageD<ImageType4DComplex>(dwis, output_name);
+    }
+    catch(itk::ExceptionObject &ex)
+    {
+        std::cout<<"Could not write output image "<<output_name<<" : "<<ex<<std::endl;
+        return EXIT_FAILURE;
+    }
 
     if(mag_name!=std::string(""))
     {
@@ -226,7 +253,15 @@ int main(int argc, char* argv[])
         for(it.GoToBegin();!it.IsAtEnd();++it)
             it.Set( std::abs( dwis->GetPixel(it.GetIndex()) ) );
 
-        writeImageD<ImageType4D>(mag, mag_name);
+        try
+        {
+            writeImageD<ImageType4D>(mag, mag_name);
+        }
+        catch(itk::ExceptionObject &ex)
+        {
+            std::cout<<"Could not write output magnitude image "<<mag_name<<" : "<<ex<<std::endl;
+            return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;

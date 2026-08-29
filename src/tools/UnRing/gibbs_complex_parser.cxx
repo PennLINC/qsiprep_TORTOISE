@@ -316,5 +316,22 @@ bool GibbsComplex_PARSER::checkIfAllRequiredParamsAreEntered()
         std::cout<<"pf_side must be either low or high...Exiting..."<<std::endl;
         return 0;
     }
+    // getPFFactor() returns -1 as the "not supplied" sentinel -- only
+    // validate when the user actually passed a value. A factor outside
+    // (0.5, 1.0] either means more than half of k-space is missing (nonsense
+    // for partial Fourier) or is negative/zero, which turns into a negative
+    // n_missing downstream and an out-of-bounds write in BuildPOCSMasks.
+    float pf_factor = this->getPFFactor();
+    if(pf_factor!=-1.f && (pf_factor<=0.5f || pf_factor>1.0f))
+    {
+        std::cout<<"pf_factor must be in the range (0.5, 1.0]...Exiting..."<<std::endl;
+        return 0;
+    }
+    int pe_dir = this->getPEDir();
+    if(pe_dir!=0 && pe_dir!=1)
+    {
+        std::cout<<"pe_dir must be either 0 or 1...Exiting..."<<std::endl;
+        return 0;
+    }
     return 1;
 }
