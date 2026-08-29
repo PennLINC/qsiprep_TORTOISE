@@ -488,9 +488,100 @@ Roughly in order of information gained per unit effort.
    settles any residual implementation doubt.
 5. **Test H3** by evaluating on data acquired without in-plane acceleration, and ideally
    without multiband.
-6. **Sweep `--pocs_iters`.** Currently 10, with observed final relative change 0.005075 on
+6. **Benchmark complex RPG** (§7). It uses phase, carries no smooth-phase assumption, and is
+   mostly already implemented — plausibly a cheaper path to a working method than tuning POCS.
+7. **Sweep `--pocs_iters`.** Currently 10, with observed final relative change 0.005075 on
    ds006131 — i.e. it hit the iteration cap without reaching `tol = 1e-4`. Check whether more
    iterations converge and whether that helps or hurts.
+
+---
+
+## 7. Complex RPG — an untested candidate, already half-implemented
+
+### RPG and POCS+SuShi are alternatives, not variants
+
+Worth stating plainly, because the two are easy to conflate and the distinction drives
+everything below. Zero-filled partial Fourier produces ringing at **two** periods: the
+ordinary Gibbs period from the symmetric part of k-space, plus a shorter-period component
+from the asymmetric truncation. The two methods attack that from opposite ends.
+
+- **RPG leaves the data alone and unrings more cleverly.** It never restores k-space. In
+  `UnRing78` (`unring.h:676`) and `UnRing68` (`unring.h:862`): nearest-neighbour upsample ×3
+  along PE, split rows into 4 interleaved sub-images (`SplitImageRows`, `unring.h:577`),
+  ordinary SuShi on each, recombine (`unring.h:629`), downsample, then a final 1D pass. The
+  resampling makes the shorter-period ringing land at the *ordinary* period on the resampled
+  grid, where plain SuShi can remove it. Magnitude-only by design — built for when phase is
+  unavailable.
+- **POCS+SuShi fixes the data, then unrings ordinarily.** POCS fills the missing lines from
+  the image phase; once k-space is symmetric the second period is gone, so ordinary Kellner
+  SuShi suffices. `UnRingFullComplex` (`unring.h:466`) is plain SuShi — it contains none of
+  RPG's resampling machinery.
+
+Lee et al. present these as alternatives: POCS+SuShi when phase is available, RPG when it is
+not. Neither is a version of the other.
+
+This also explains a result in §2.2 that otherwise looks like a bug: on the zero-filled
+synthetic phantom, complex SuShi *alone* scored RMSE 3.86 against 2.79 uncorrected — worse
+than no correction. That is the predicted behaviour of applying ordinary SuShi to data that
+still carries an asymmetric truncation. **The "SuShi only" arm is not a stand-in for complex
+RPG**, and on all three real runs (all zero-filled) it is the theoretically wrong model.
+
+### The candidate
+
+There is a third option in the design space that this branch does not implement and that I
+have not found in the literature: **apply RPG's resampling scheme to complex data instead of
+magnitude.**
+
+Why it is attractive given the current state of this investigation:
+
+- It uses the phase information, so it does not throw away what magnitude RPG cannot see.
+- It carries **no smooth-phase assumption** — which is the leading algorithmic suspect (H2)
+  for POCS's behaviour on real diffusion data.
+- It targets the actual artifact structure of zero-filled PF, which ordinary complex SuShi
+  demonstrably does not.
+- Most of it already exists in this file.
+
+### What it would take
+
+The pattern is the one already used for `UnRingFullComplex`, and the hard part is done:
+
+1. A complex 3D overload of `UnRingFull` (mirroring `unring.h:403`) that passes
+   `complex_tv = true` — the rotation-invariant TV criterion added in the section above
+   already generalises the shift selection correctly, so no new algorithmic work is needed
+   there.
+2. Complex versions of `SplitImageRows` / `CombineImageRows`. These are pure index
+   operations, so they are mechanical.
+3. Resampling. `resample_3D_image` takes `ImageType3D` (real). RPG uses **nearest-neighbour**
+   for both the ×3 upsample and the ÷3 downsample, and NN is index selection — so resampling
+   the real and imaginary parts separately is *exactly* equivalent to resampling the complex
+   image, with no interpolation error and no loss of phase equivariance. That makes this step
+   easy and safe. Do not silently switch to linear or B-spline interpolation here; that would
+   change RPG's behaviour as well as complicate the equivariance argument.
+4. `UnRing78Complex` / `UnRing68Complex` assembled from the above, with the final `unring_1D`
+   call passing `complex_tv = true`.
+5. Leave `UnRing78` / `UnRing68` untouched, exactly as `UnRingFullComplex` left `UnRingFull`
+   untouched. They are used by `TORTOISEProcess` and have no test coverage.
+
+### How to test it
+
+- Extend `complex_phase_equivariance` to cover the new functions. Every step above is either
+  index selection or the fixed TV criterion, so it should pass at the `complex<float>` floor
+  (~1e-7). If it does not, one of the resampling or split/recombine steps is not doing what
+  this section assumes.
+- Add it as a fifth arm to `run_validation.py`. That harness has ground truth, so unlike the
+  real-data comparison it can actually rank arms. The specific prediction to check: on
+  zero-filled synthetic data complex RPG should beat complex SuShi alone (which scores worse
+  than no correction), and should not depend on phase smoothness the way POCS does.
+- Then run it on the real data alongside the others — but note that ranking on real data still
+  requires the ground-truth experiment in §6, not the retracted proxy.
+
+### Caveats
+
+This is a research idea, not a known-good method. RPG's resampling argument is derived for
+magnitude images in Lee et al.; whether it carries over cleanly to complex data is exactly
+what the phantom test above would establish. Treat a negative result there as informative
+rather than as an implementation failure.
+
 
 ---
 
