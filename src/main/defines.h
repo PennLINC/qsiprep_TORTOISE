@@ -7,6 +7,7 @@
 #include "itkImageRegionIteratorWithIndex.h"
 
 #include <ostream>
+#include <complex>
 
 
 #include <boost/algorithm/string.hpp>
@@ -32,6 +33,7 @@ using EigenVecType = Eigen::Matrix<float, Eigen::Dynamic, 1>;
 using ImageType2D=itk::Image<PixelDataType,2>;
 using ImageType3D=itk::Image<PixelDataType,3>;
 using ImageType4D=itk::Image<PixelDataType,4>;
+using ImageType4DComplex=itk::Image<std::complex<float>,4>;
 using ImageType3DBool=itk::Image<char,3>;
 using ImageType4DBool=itk::Image<char,4>;
 

@@ -44,6 +44,9 @@ template void writeImageD<ImageType3DBool>(ImageType3DBool::Pointer , std::strin
 template ImageType4D::Pointer readImageD<ImageType4D>(std::string) ;
 template void writeImageD<ImageType4D>(ImageType4D::Pointer , std::string);
 
+template ImageType4DComplex::Pointer readImageD<ImageType4DComplex>(std::string) ;
+template void writeImageD<ImageType4DComplex>(ImageType4DComplex::Pointer , std::string);
+
 template ImageType4DBool::Pointer readImageD<ImageType4DBool>(std::string) ;
 template void writeImageD<ImageType4DBool>(ImageType4DBool::Pointer , std::string);
 

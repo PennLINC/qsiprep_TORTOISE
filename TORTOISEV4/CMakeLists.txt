@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 PROJECT(TORTOISEV4  )
+enable_testing()
 
 SET(USEOPENMP 1)
  #  SET(CMAKE_BUILD_TYPE Debug)
@@ -254,6 +255,11 @@ target_link_libraries(SelectBestB0 ${ITK_LIBRARIES} ${Boost_LIBRARIES} )
 
 add_executable(Gibbs ../src/tools/UnRing/gibbs_main.cxx ../src/tools/ResampleDWIs/resample_dwis.cxx ${SOURCES})
 target_link_libraries(Gibbs ${ITK_LIBRARIES} ${Boost_LIBRARIES} fftw3 )
+
+add_executable(GibbsComplexTests ../src/tools/UnRing/tests/test_gibbs_complex.cxx ../src/tools/ResampleDWIs/resample_dwis.cxx ${SOURCES})
+target_link_libraries(GibbsComplexTests ${ITK_LIBRARIES} ${Boost_LIBRARIES} fftw3 )
+
+add_test(NAME complex_io_roundtrip COMMAND GibbsComplexTests complex_io_roundtrip)
 
 add_executable(CombineDWIs ../src/tools/CombineDWIs/combine_dwis_main.cxx  ${SOURCES})
 target_link_libraries(CombineDWIs ${ITK_LIBRARIES} ${Boost_LIBRARIES}  )
