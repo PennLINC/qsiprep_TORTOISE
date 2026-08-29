@@ -2,7 +2,8 @@
 
 Status: **open question, needs investigation**
 Date: 2026-08-29
-Code state: commit `28dc728`, branch `complex-degibbs`
+Code state: branch `complex-degibbs`, including the complex-TV fix in
+[Resolved: complex SuShi was not phase-rotation invariant](#resolved-complex-sushi-was-not-phase-rotation-invariant)
 Related: [PennLINC/qsiprep#1099](https://github.com/PennLINC/qsiprep/issues/1099),
 design spec `docs/superpowers/specs/2026-08-29-complex-pf-gibbs-design.md`
 
@@ -27,7 +28,7 @@ acceptance criteria a substitute dataset must meet.
 
 ## 1. What the implementation does
 
-Files, all at commit `28dc728`:
+Files (POCS/detector as at commit `28dc728`; `unring.h` additionally carries the complex-TV fix):
 
 | File | Contents |
 |---|---|
@@ -36,7 +37,7 @@ Files, all at commit `28dc728`:
 | `src/tools/UnRing/unring.h` | `UnRingFullComplex` (appended; pre-existing functions untouched) |
 | `src/tools/UnRing/gibbs_complex_main.cxx` | driver: read → transpose → detect → POCS → SuShi → write |
 | `src/tools/UnRing/gibbs_complex_parser.cxx` | CLI |
-| `src/tools/UnRing/tests/test_gibbs_complex.cxx` | 6 ctest cases |
+| `src/tools/UnRing/tests/test_gibbs_complex.cxx` | 7 ctest cases |
 | `src/tools/UnRing/validation/run_validation.py` | synthetic phantom harness |
 
 ### The POCS algorithm as implemented
@@ -246,7 +247,103 @@ odd `n`; confirmed empirically by the AP/PA band flipping ends on real data.
 large difference where it ran.
 
 **Complex SuShi marshalling.** `UnRingFullComplex` fed zero-imaginary input reproduces the
-pre-existing magnitude `UnRingFull` output with max relative difference **exactly 0**.
+pre-existing magnitude `UnRingFull` output with max relative difference **exactly 0**. Note
+this validates marshalling only — see
+[Resolved: complex SuShi was not phase-rotation invariant](#resolved-complex-sushi-was-not-phase-rotation-invariant)
+for a defect in the shift-selection objective that this test was structurally unable to detect,
+now fixed.
+
+**Interaction between POCS and the complex SuShi objective.** Tested directly by re-running
+both affected arms after the TV fix; per-voxel output changes materially, aggregate results do
+not. See the same section.
+
+---
+
+## Resolved: complex SuShi was not phase-rotation invariant
+
+Raised by external review (`docs/chatgpt/2026-08-29-complex-pf-gibbs-followup.md`), confirmed
+empirically, and **fixed**. Recorded here because it was a genuine defect in the complex path
+that the original test suite could not have caught.
+
+### The defect
+
+`unring_1D` selected the subvoxel shift by minimising a total-variation term accumulated as
+`fabs(dRe) + fabs(dIm)` — an L1 norm in the (Re, Im) plane. A global phase offset is an
+arbitrary receiver convention, so unringing must commute with it:
+`U(S·e^{iθ}) == U(S)·e^{iθ}`. An L1 norm in the complex plane does not: it changes under
+rotation, so the selected shift depended on an arbitrary phase.
+
+### Empirical confirmation, before the fix
+
+Measured on the built binary with `--pocs 0`, comparing `U(S·e^{iθ})·e^{-iθ}` against `U(S)`:
+
+| θ | max abs diff, rel. to peak | RMS magnitude diff | object voxels changed |
+|---|---|---|---|
+| π/8 | 1.17e-2 | 2.22e-3 | 16.3% |
+| π/4 | 1.17e-2 | 3.00e-3 | 24.9% |
+| π/3 | 1.47e-2 | 2.24e-3 | 20.2% |
+| **π/2** | **4.4e-14** | **0.00** | **0.0%** |
+
+The π/2 row identifies the mechanism unambiguously. Rotating by 90° swaps Re and Im, and
+`|a| + |b|` is exactly invariant under that swap — so π/2 passes to machine precision while
+every other angle fails. A generic numerical bug would not produce exact invariance at
+precisely the angle where L1 happens to be invariant.
+
+### Why the existing tests could not catch it
+
+The `magnitude_equivalence` regression test feeds input with a zero imaginary channel. Then
+`dIm ≡ 0`, so `|dRe| + |dIm| ≡ |dRe| ≡ |dS|` — **the L1 and L2 norms are identical exactly on
+the case that test covers.** The strongest test in the suite was structurally blind to this
+class of defect. Worth remembering when designing regression anchors: a test that pins the
+degenerate case validates the marshalling, not the objective.
+
+### The fix
+
+`unring_1D` and `unring_2d` take a defaulted `bool complex_tv = false`. When true, both the
+initial TV block and the sliding-window update use `std::hypot(dRe, dIm)`. When false they
+retain the original expressions **verbatim and in their original evaluation order**, so
+floating-point association is unchanged and the magnitude path is bit-for-bit identical.
+Only `UnRingFullComplex` opts in. `UnRingFull`, `UnRing78`, `UnRing68` and the `Gibbs`
+binary are untouched.
+
+Verification after the fix:
+
+- `magnitude_equivalence`: max relative difference **0** — legacy path bit-identical.
+- `complex_phase_equivariance` (new, permanent ctest case): deviations fall from ~1.2e-2 to
+  **~1e-7** across θ ∈ {π/8, π/4, π/3, π/2, 1.0}. That residual is the `complex<float>`
+  storage floor (eps ≈ 1.2e-7), not a remaining defect.
+- Suite is 7/7.
+
+The test deliberately checks several angles. **A test that only checked π/2 would pass against
+the broken implementation** — do not "simplify" it.
+
+### Did it change the real-data conclusions? No.
+
+Both affected arms were re-run on all three runs. Per-voxel output changed substantially;
+the aggregate metric did not.
+
+| arm | run / vol | old | new | max abs Δ magnitude, rel. to peak |
+|---|---|---|---|---|
+| SuShi only | NIBS AP b≈0 | −8% | −8% | 1.13e-1 |
+| SuShi only | NIBS AP high-b | −8% | −8% | 1.13e-1 |
+| SuShi only | NIBS PA b≈0 | −7% | −8% | 1.13e-1 |
+| SuShi only | NIBS PA high-b | −10% | −11% | 1.13e-1 |
+| SuShi only | ds006131 b≈0 | −8% | −9% | 6.58e-2 |
+| SuShi only | ds006131 high-b | +3% | +3% | 6.58e-2 |
+| POCS+SuShi | NIBS AP b≈0 | +3% | +3% | 1.01e-1 |
+| POCS+SuShi | NIBS AP high-b | +14% | +14% | 1.01e-1 |
+| POCS+SuShi | NIBS PA b≈0 | +4% | +4% | 9.89e-2 |
+| POCS+SuShi | NIBS PA high-b | +13% | +13% | 9.89e-2 |
+| POCS+SuShi | ds006131 b≈0 | +1% | +2% | 6.59e-2 |
+| POCS+SuShi | ds006131 high-b | +9% | +9% | 6.59e-2 |
+
+Individual voxels move by up to ~11% of peak — the defect was real and materially affected
+the images — but no arm ordering, and no conclusion in this document, changes.
+
+**This eliminates one confound.** The review's concern that POCS-attributed differences might
+be an interaction between POCS's phase rotation and a non-invariant SuShi objective is
+specifically tested here and does not hold. H1 (metric confound) and H2 (phase assumption)
+both remain open; the tables in §3 stand as measured.
 
 ---
 

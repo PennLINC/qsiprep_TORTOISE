@@ -2,6 +2,7 @@
 #define _UNRING_H
 
 #include "defines.h"
+#include <cmath>
 #include "itkImageRegionIteratorWithIndex.h"
 #include "itkImageDuplicator.h"
 #include "fftw3.h"
@@ -25,7 +26,7 @@ struct my_plans_struct
 #define PI  3.141592
 
 
-void unring_1D(fftw_complex *data,int n, int numlines,int nsh,int minW, int maxW,my_plans_struct *my_plans,bool tr)
+void unring_1D(fftw_complex *data,int n, int numlines,int nsh,int minW, int maxW,my_plans_struct *my_plans,bool tr,bool complex_tv=false)
 {
     fftw_complex *in, *out;
 
@@ -106,12 +107,30 @@ void unring_1D(fftw_complex *data,int n, int numlines,int nsh,int minW, int maxW
             TV1arr[j] = 0;
             TV2arr[j] = 0;
             const int l = 0;
+            // Total variation used to pick the subvoxel shift. The legacy branch sums
+            // |dRe| + |dIm|, an L1 norm in the (Re,Im) plane. That is fine when the
+            // imaginary channel is identically zero, but for genuinely complex data it
+            // is NOT invariant under a global phase rotation S -> S*exp(i*theta): the
+            // chosen shift would depend on an arbitrary receiver phase. The complex
+            // branch uses the complex modulus, which is rotation invariant. The legacy
+            // expression is kept verbatim, in its original evaluation order, so
+            // magnitude callers stay bit-for-bit identical.
             for (int t = minW; t <= maxW;t++)
             {
-                TV1arr[j] += fabs(sh2[j*n + (l-t+n)%n ][0] - sh2[j*n + (l-(t+1)+n)%n ][0]);
-                TV1arr[j] += fabs(sh2[j*n + (l-t+n)%n ][1] - sh2[j*n + (l-(t+1)+n)%n ][1]);
-                TV2arr[j] += fabs(sh2[j*n + (l+t+n)%n ][0] - sh2[j*n + (l+(t+1)+n)%n ][0]);
-                TV2arr[j] += fabs(sh2[j*n + (l+t+n)%n ][1] - sh2[j*n + (l+(t+1)+n)%n ][1]);
+                if(complex_tv)
+                {
+                    TV1arr[j] += std::hypot(sh2[j*n + (l-t+n)%n ][0] - sh2[j*n + (l-(t+1)+n)%n ][0],
+                                            sh2[j*n + (l-t+n)%n ][1] - sh2[j*n + (l-(t+1)+n)%n ][1]);
+                    TV2arr[j] += std::hypot(sh2[j*n + (l+t+n)%n ][0] - sh2[j*n + (l+(t+1)+n)%n ][0],
+                                            sh2[j*n + (l+t+n)%n ][1] - sh2[j*n + (l+(t+1)+n)%n ][1]);
+                }
+                else
+                {
+                    TV1arr[j] += fabs(sh2[j*n + (l-t+n)%n ][0] - sh2[j*n + (l-(t+1)+n)%n ][0]);
+                    TV1arr[j] += fabs(sh2[j*n + (l-t+n)%n ][1] - sh2[j*n + (l-(t+1)+n)%n ][1]);
+                    TV2arr[j] += fabs(sh2[j*n + (l+t+n)%n ][0] - sh2[j*n + (l+(t+1)+n)%n ][0]);
+                    TV2arr[j] += fabs(sh2[j*n + (l+t+n)%n ][1] - sh2[j*n + (l+(t+1)+n)%n ][1]);
+                }
             }
         }
 
@@ -136,6 +155,22 @@ void unring_1D(fftw_complex *data,int n, int numlines,int nsh,int minW, int maxW
                     minidx = j;
                 }
 
+                // Same rotation-invariance argument as the initial block above; the
+                // sliding update keeps its structure because the complex modulus is
+                // still a per-position term that can be added and subtracted.
+                if(complex_tv)
+                {
+                    TV1arr[j] += std::hypot(sh2[j*n + (l-minW+1+n)%n ][0] - sh2[j*n + (l-(minW)+n)%n ][0],
+                                            sh2[j*n + (l-minW+1+n)%n ][1] - sh2[j*n + (l-(minW)+n)%n ][1]);
+                    TV1arr[j] -= std::hypot(sh2[j*n + (l-maxW+n)%n ][0] - sh2[j*n + (l-(maxW+1)+n)%n ][0],
+                                            sh2[j*n + (l-maxW+n)%n ][1] - sh2[j*n + (l-(maxW+1)+n)%n ][1]);
+                    TV2arr[j] += std::hypot(sh2[j*n + (l+maxW+1+n)%n ][0] - sh2[j*n + (l+(maxW+2)+n)%n ][0],
+                                            sh2[j*n + (l+maxW+1+n)%n ][1] - sh2[j*n + (l+(maxW+2)+n)%n ][1]);
+                    TV2arr[j] -= std::hypot(sh2[j*n + (l+minW+n)%n ][0] - sh2[j*n + (l+(minW+1)+n)%n ][0],
+                                            sh2[j*n + (l+minW+n)%n ][1] - sh2[j*n + (l+(minW+1)+n)%n ][1]);
+                }
+                else
+                {
                 TV1arr[j] += fabs(sh2[j*n + (l-minW+1+n)%n ][0] - sh2[j*n + (l-(minW)+n)%n ][0]);
                 TV1arr[j] -= fabs(sh2[j*n + (l-maxW+n)%n ][0] - sh2[j*n + (l-(maxW+1)+n)%n ][0]);
                 TV2arr[j] += fabs(sh2[j*n + (l+maxW+1+n)%n ][0] - sh2[j*n + (l+(maxW+2)+n)%n ][0]);
@@ -145,6 +180,7 @@ void unring_1D(fftw_complex *data,int n, int numlines,int nsh,int minW, int maxW
                 TV1arr[j] -= fabs(sh2[j*n + (l-maxW+n)%n ][1] - sh2[j*n + (l-(maxW+1)+n)%n ][1]);
                 TV2arr[j] += fabs(sh2[j*n + (l+maxW+1+n)%n ][1] - sh2[j*n + (l+(maxW+2)+n)%n ][1]);
                 TV2arr[j] -= fabs(sh2[j*n + (l+minW+n)%n ][1] - sh2[j*n + (l+(minW+1)+n)%n ][1]);
+                }
 
             }
 
@@ -184,7 +220,7 @@ void unring_1D(fftw_complex *data,int n, int numlines,int nsh,int minW, int maxW
 }
 
 
-void unring_2d(fftw_complex *data1,fftw_complex *tmp2, const int *dim_sz, int nsh, int minW, int maxW, my_plans_struct *my_plans)
+void unring_2d(fftw_complex *data1,fftw_complex *tmp2, const int *dim_sz, int nsh, int minW, int maxW, my_plans_struct *my_plans,bool complex_tv=false)
 {
         double eps = 0;
         fftw_complex *tmp1 =  (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * dim_sz[0]*dim_sz[1]);
@@ -221,8 +257,8 @@ void unring_2d(fftw_complex *data1,fftw_complex *tmp2, const int *dim_sz, int ns
         fftw_execute_dft(*(my_plans->pinv_tr2d),tmp2,data2);
 
 
-        unring_1D(data1,dim_sz[0],dim_sz[1],nsh,minW,maxW,my_plans,0);
-        unring_1D(data2,dim_sz[1],dim_sz[0],nsh,minW,maxW,my_plans,1);
+        unring_1D(data1,dim_sz[0],dim_sz[1],nsh,minW,maxW,my_plans,0,complex_tv);
+        unring_1D(data2,dim_sz[1],dim_sz[0],nsh,minW,maxW,my_plans,1,complex_tv);
 
 
         fftw_execute_dft(*(my_plans->p2d),data1,tmp1);
@@ -499,7 +535,7 @@ ImageType4DComplex::Pointer UnRingFullComplex(ImageType4DComplex::Pointer input_
                     data_complex[sz[0]*y+x][1] = (double) v.imag();
                 }
             }
-            unring_2d(data_complex,res_complex, dim_sz,nsh,minW,maxW,&my_plans);
+            unring_2d(data_complex,res_complex, dim_sz,nsh,minW,maxW,&my_plans,true);
 
             for (int x = 0 ; x < sz[0];x++)
             {

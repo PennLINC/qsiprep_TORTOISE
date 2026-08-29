@@ -560,6 +560,60 @@ static int test_pocs_accuracy()
     return 0;
 }
 
+
+// A global phase offset is an arbitrary receiver convention, so unringing must commute
+// with it:  U(S*e^{i.theta}) == U(S)*e^{i.theta}.
+// The legacy TV criterion sums |dRe| + |dIm| -- an L1 norm in the complex plane. That is
+// invariant when Re and Im are merely swapped, i.e. at multiples of pi/2, but not at any
+// other angle. A test that only checked pi/2 would therefore PASS against the broken
+// implementation, so several angles are checked here on purpose.
+static int test_complex_phase_equivariance()
+{
+    const int nx = 96, ny = 96;
+    const double PI_ = 3.14159265358979323846;
+
+    ImageType4DComplex::Pointer base = MakePhantom(nx, ny);
+    ImageType4DComplex::Pointer U0 = UnRingFullComplex(base, 25, 1, 3);
+
+    ImageType4DComplex::IndexType ind; ind[2] = 0; ind[3] = 0;
+    double peak = 0.0;
+    for (int y = 0; y < ny; y++) { ind[1] = y;
+        for (int x = 0; x < nx; x++) { ind[0] = x;
+            peak = std::max(peak, (double) std::abs(U0->GetPixel(ind)));
+        } }
+    CHECK(peak > 0.0);
+
+    const double thetas[5] = { PI_/8.0, PI_/4.0, PI_/3.0, PI_/2.0, 1.0 };
+    for (int t = 0; t < 5; t++)
+    {
+        const double th = thetas[t];
+        const std::complex<double> rot(cos(th), sin(th));
+
+        ImageType4DComplex::Pointer rotimg = MakePhantom(nx, ny);
+        for (int y = 0; y < ny; y++) { ind[1] = y;
+            for (int x = 0; x < nx; x++) { ind[0] = x;
+                std::complex<double> v = std::complex<double>(rotimg->GetPixel(ind)) * rot;
+                rotimg->SetPixel(ind, std::complex<float>((float) v.real(), (float) v.imag()));
+            } }
+
+        ImageType4DComplex::Pointer Ur = UnRingFullComplex(rotimg, 25, 1, 3);
+
+        double worst = 0.0;
+        for (int y = 0; y < ny; y++) { ind[1] = y;
+            for (int x = 0; x < nx; x++) { ind[0] = x;
+                std::complex<double> a = std::complex<double>(Ur->GetPixel(ind)) * std::conj(rot);
+                std::complex<double> b = std::complex<double>(U0->GetPixel(ind));
+                worst = std::max(worst, std::abs(a - b));
+            } }
+
+        std::cout << "  theta=" << th << "  max relative deviation = " << (worst / peak) << std::endl;
+        CHECK(worst / peak < 1e-6);
+    }
+
+    std::cout << "PASS complex_phase_equivariance" << std::endl;
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     // Later tasks' tests (unring.h, pocs.h) call TORTOISE::EnableOMPThread(),
@@ -581,6 +635,7 @@ int main(int argc, char *argv[])
     if (name == "pf_detection_negative") return test_pf_detection_negative();
     if (name == "pocs_consistency") return test_pocs_consistency();
     if (name == "pocs_accuracy")    return test_pocs_accuracy();
+    if (name == "complex_phase_equivariance") return test_complex_phase_equivariance();
 
     std::cerr << "Unknown test: " << name << std::endl;
     return 1;
