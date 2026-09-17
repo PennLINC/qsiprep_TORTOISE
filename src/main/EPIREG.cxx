@@ -14,7 +14,8 @@
 //#include "../tools/RotateBMatrix/rotate_bmatrix.h"
 
 #include "rigid_register_images.h"
-#include "drbuddi_image_utilities.h"
+#include "itkResampleImageFilter.h"
+#include "itkVectorLinearInterpolateImageFunction.h"
 
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkResampleImageFilter.h"
@@ -283,7 +284,20 @@ void EPIREG::Step2_DiffeoRegistration()
     {
         (*stream)<<"Initializing the EPI registration with "<<init_field_name<<std::endl;
         DisplacementFieldType::Pointer init_field= readImageD<DisplacementFieldType>(init_field_name);
-        init_field= ResampleImage(init_field, this->b0_up_quad);
+        {
+            // Onto the quad grid the registration runs on (the ITK resampler, so this links in
+            // the CUDA build too, where drbuddi_image_utilities' version is not compiled).
+            using VecInterpType= itk::VectorLinearInterpolateImageFunction<DisplacementFieldType,double>;
+            using VecResampleType= itk::ResampleImageFilter<DisplacementFieldType, DisplacementFieldType>;
+            VecResampleType::Pointer resampler= VecResampleType::New();
+            resampler->SetOutputParametersFromImage(this->b0_up_quad);
+            resampler->SetInput(init_field);
+            resampler->SetInterpolator(VecInterpType::New());
+            DisplacementFieldType::PixelType zero; zero.Fill(0);
+            resampler->SetDefaultPixelValue(zero);
+            resampler->Update();
+            init_field= resampler->GetOutput();
+        }
         myEPIREG_processor->SetInitialFieldsFromExternal(init_field, nullptr);
     }
     myEPIREG_processor->Process();
