@@ -1006,6 +1006,18 @@ void DRBUDDI_Diffeo::Process()
     CurrentFieldType::Pointer prev_finv=nullptr;
     CurrentFieldType::Pointer prev_minv=nullptr;
     std::vector<CurrentFieldType::Pointer> init_vfield;
+    if(init_finv_external)
+    {
+        #ifdef USECUDA
+            prev_finv=CurrentFieldType::New();
+            prev_finv->SetImageFromITK(init_finv_external);
+            prev_minv=CurrentFieldType::New();
+            prev_minv->SetImageFromITK(init_minv_external);
+        #else
+            prev_finv=init_finv_external;
+            prev_minv=init_minv_external;
+        #endif
+    }
 
     if(parser->GetInitialFINV()!="")
     {

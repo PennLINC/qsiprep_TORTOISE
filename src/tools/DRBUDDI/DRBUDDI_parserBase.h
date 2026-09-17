@@ -39,6 +39,7 @@ public:
     float getEPIWorkingRes();
 
     std::string GetInitialMINV();
+    std::string GetEPIREGInitialField();
     std::string GetInitialFINV();
     int getNumberOfStages();
     std::vector<std::string>  getStageString(int st);

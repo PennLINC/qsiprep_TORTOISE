@@ -2,6 +2,8 @@
 #define _DRBUDDIDIFFEO_H
 
 
+#include "itkImageDuplicator.h"
+#include "itkImageRegionIterator.h"
 #include "drbuddi_structs.h"
 #include "defines.h"
 #include "TORTOISE_parser.h"
@@ -266,10 +268,49 @@ class DRBUDDI_Diffeo
 #endif
 
     void SetStagesFromExternal(std::vector<DRBUDDIStageSettings> st){stages=st;}
+    /// Warm-start fields given in the input images' world frame (the frame getDefFINV
+    /// returns). Call after SetB0UpImage: the vectors are rotated into the axis-snapped frame
+    /// the stages work in, i.e. the inverse of what getDefFINV/getDefMINV apply on the way
+    /// out. A null moving field means identity.
+    void SetInitialFieldsFromExternal(DisplacementFieldType::Pointer finv, DisplacementFieldType::Pointer minv)
+    {
+        init_finv_external = ToInternalFrame(finv);
+        if(minv)
+            init_minv_external = ToInternalFrame(minv);
+        else
+        {
+            init_minv_external = DisplacementFieldType::New();
+            init_minv_external->SetRegions(init_finv_external->GetLargestPossibleRegion());
+            init_minv_external->CopyInformation(init_finv_external);
+            init_minv_external->Allocate();
+            DisplacementFieldType::PixelType zero; zero.Fill(0);
+            init_minv_external->FillBuffer(zero);
+        }
+    }
     void SetParser(DRBUDDI_PARSERBASE *prs){parser=prs;};
 
 
 private:            //Subfunctions the main processing functions use
+    DisplacementFieldType::Pointer ToInternalFrame(DisplacementFieldType::Pointer field)
+    {
+        typedef itk::ImageDuplicator<DisplacementFieldType> DupType;
+        DupType::Pointer dup= DupType::New();
+        dup->SetInputImage(field);
+        dup->Update();
+        DisplacementFieldType::Pointer disp= dup->GetOutput();
+        disp->SetDirection(new_dir);
+        itk::ImageRegionIterator<DisplacementFieldType> it(disp,disp->GetLargestPossibleRegion());
+        for(it.GoToBegin();!it.IsAtEnd();++it)
+        {
+            DisplacementFieldType::PixelType pix= it.Get();
+            vnl_vector<double> vec=new_dir.GetVnlMatrix()*orig_dir.GetTranspose()* pix.GetVnlVector();
+            pix[0]=vec[0];
+            pix[1]=vec[1];
+            pix[2]=vec[2];
+            it.Set(pix);
+        }
+        return disp;
+    }
     void SetImagesForMetrics();
     void SetUpStages();
     void SetDefaultStages();
@@ -309,6 +350,8 @@ private:          //class member variables
     DisplacementFieldType::Pointer up2down_INV{nullptr};
 
 #endif
+    DisplacementFieldType::Pointer init_finv_external{nullptr};
+    DisplacementFieldType::Pointer init_minv_external{nullptr};
 
     std::vector<DRBUDDIStageSettings> stages;
 

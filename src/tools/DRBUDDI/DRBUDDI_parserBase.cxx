@@ -186,6 +186,14 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
+        std::string description = std::string("Initial EPI displacement field for T2Wreg (EPIREG): an ITK displacement field in the b=0 world frame that pulls the distorted b=0 onto the corrected one, e.g. one derived from a GRE fieldmap. The registration starts from it and refines it against the structural image.")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "EPIREG_initial_field");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
         std::string description = std::string("Turn on rigid registration for HEAVILY distorted data? Computationally more expensive.")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "DRBUDDI_rigid_for_heavily_distorted");
@@ -542,6 +550,14 @@ std::string DRBUDDI_PARSERBASE::GetInitialMINV()
    else
        return std::string("");
 
+}
+std::string DRBUDDI_PARSERBASE::GetEPIREGInitialField()
+{
+    OptionType::Pointer option = this->GetOption( "EPIREG_initial_field");
+   if(option->GetNumberOfFunctions())
+        return option->GetFunction(0)->GetName();
+   else
+       return std::string("");
 }
 /*
 bool DRBUDDI_PARSERBASE::getDisableInitRigid()
