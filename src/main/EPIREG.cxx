@@ -15,7 +15,6 @@
 
 #include "rigid_register_images.h"
 #include "itkResampleImageFilter.h"
-#include "itkVectorLinearInterpolateImageFunction.h"
 
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkResampleImageFilter.h"
@@ -285,14 +284,13 @@ void EPIREG::Step2_DiffeoRegistration()
         (*stream)<<"Initializing the EPI registration with "<<init_field_name<<std::endl;
         DisplacementFieldType::Pointer init_field= readImageD<DisplacementFieldType>(init_field_name);
         {
-            // Onto the quad grid the registration runs on (the ITK resampler, so this links in
-            // the CUDA build too, where drbuddi_image_utilities' version is not compiled).
-            using VecInterpType= itk::VectorLinearInterpolateImageFunction<DisplacementFieldType,double>;
+            // Onto the quad grid the registration runs on. The filter's default linear
+            // interpolator handles vector pixels; drbuddi_image_utilities' helper is not
+            // compiled into the CUDA target.
             using VecResampleType= itk::ResampleImageFilter<DisplacementFieldType, DisplacementFieldType>;
             VecResampleType::Pointer resampler= VecResampleType::New();
             resampler->SetOutputParametersFromImage(this->b0_up_quad);
             resampler->SetInput(init_field);
-            resampler->SetInterpolator(VecInterpType::New());
             DisplacementFieldType::PixelType zero; zero.Fill(0);
             resampler->SetDefaultPixelValue(zero);
             resampler->Update();
