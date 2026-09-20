@@ -69,7 +69,14 @@ struct DRBUDDIStageSettings
         CUDAIMAGE::Pointer init_minv_const{nullptr};
 
         CUDAIMAGE::Pointer output_finv{nullptr};
-        CUDAIMAGE::Pointer output_minv{nullptr};               
+        CUDAIMAGE::Pointer output_minv{nullptr};
+
+        // Residual-only stage output (def_FINV/def_MINV, WITHOUT the composed init_*_const base).
+        // Only the keep-initial-transform-fixed mode reads these, to carry the learned residual
+        // from one pyramid stage to the next while the external prior stays a fixed base;
+        // output_finv above stays the full composed field the rest of the code consumes.
+        CUDAIMAGE::Pointer output_finv_res{nullptr};
+        CUDAIMAGE::Pointer output_minv_res{nullptr};
 
         std::vector<CUDAIMAGE::Pointer>  init_vfield;
 
@@ -81,6 +88,10 @@ struct DRBUDDIStageSettings
 
         DisplacementFieldType::Pointer init_finv_const{nullptr};
         DisplacementFieldType::Pointer init_minv_const{nullptr};
+
+        // See the CUDA branch above: residual-only stage output for the fixed-base init mode.
+        DisplacementFieldType::Pointer output_finv_res{nullptr};
+        DisplacementFieldType::Pointer output_minv_res{nullptr};
 
     #endif
 

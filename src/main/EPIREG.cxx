@@ -14,6 +14,7 @@
 //#include "../tools/RotateBMatrix/rotate_bmatrix.h"
 
 #include "rigid_register_images.h"
+#include "itkResampleImageFilter.h"
 
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkResampleImageFilter.h"
@@ -65,10 +66,15 @@ void EPIREG::Step0_CreateImages()
     ImageType3D::Pointer dummy;
     CreateCorrectionImage(this->up_nii_name,this->b0_up,dummy);
 
-    std::string gradnonlin_field_name= RegistrationSettings::get().getValue<std::string>("grad_nonlin");
-    if(gradnonlin_field_name!="")
+    std::string gradnonlin_field_name= parser->getGradNonlinInput();
+    if(gradnonlin_field_name!="" && parser->getNOGradWarp()==false)
     {
-        std::string gradnonlin_name_inv = gradnonlin_field_name.substr(0,gradnonlin_field_name.rfind(".nii"))+ "_inv.nii";
+        // The field TORTOISE converted and wrote at import, as DRBUDDI reads it (not the raw
+        // --grad_nonlin argument, which may be a coefficient file).
+        std::string up_name = this->parser->getUpInputName();
+        std::string basename= fs::path(up_name).filename().string();
+        basename=basename.substr(0,basename.rfind(".nii"));
+        std::string gradnonlin_name_inv= this->proc_folder + std::string("/") + basename + std::string("_proc_gradnonlin_field_inv.nii");
         DisplacementFieldType::Pointer field= readImageD<DisplacementFieldType>(gradnonlin_name_inv);
 
         DisplacementFieldTransformType::Pointer gradwarp_trans=DisplacementFieldTransformType::New();
@@ -167,7 +173,7 @@ void EPIREG::Step2_DiffeoRegistration()
         phase_vector[0]=1;
     if(this->PE_string=="slice")
         phase_vector[2]=1;
-    phase_vector= this->b0_up->GetDirection().GetVnlMatrix() * phase_vector;
+    // The phase vector stays in index space: the metrics apply the direction matrix.
 
 
     std::vector<DRBUDDIStageSettings> stages;
@@ -272,6 +278,26 @@ void EPIREG::Step2_DiffeoRegistration()
     myEPIREG_processor->SetDownPEVector(phase_vector);
     myEPIREG_processor->SetParser(parser);
     myEPIREG_processor->SetStagesFromExternal(stages);
+    std::string init_field_name = parser->GetEPIREGInitialField();
+    if(init_field_name!="")
+    {
+        (*stream)<<"Initializing the EPI registration with "<<init_field_name<<std::endl;
+        DisplacementFieldType::Pointer init_field= readImageD<DisplacementFieldType>(init_field_name);
+        {
+            // Onto the quad grid the registration runs on. The filter's default linear
+            // interpolator handles vector pixels; drbuddi_image_utilities' helper is not
+            // compiled into the CUDA target.
+            using VecResampleType= itk::ResampleImageFilter<DisplacementFieldType, DisplacementFieldType>;
+            VecResampleType::Pointer resampler= VecResampleType::New();
+            resampler->SetOutputParametersFromImage(this->b0_up_quad);
+            resampler->SetInput(init_field);
+            DisplacementFieldType::PixelType zero; zero.Fill(0);
+            resampler->SetDefaultPixelValue(zero);
+            resampler->Update();
+            init_field= resampler->GetOutput();
+        }
+        myEPIREG_processor->SetInitialFieldsFromExternal(init_field, nullptr);
+    }
     myEPIREG_processor->Process();
 
     this->def_FINV=myEPIREG_processor->getUp2DownINV();

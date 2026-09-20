@@ -911,6 +911,11 @@ void DRBUDDIStage::RunDRBUDDIStage()
 
     this->settings->output_finv= this->def_FINV;
     this->settings->output_minv= this->def_MINV;
+    // Residual-only output (learned deformation without the fixed base). The keep-initial-transform-
+    // fixed mode carries this into the next stage's init_finv so the residual accumulates across the
+    // pyramid while the external prior stays a fixed base; output_finv below stays the full field.
+    this->settings->output_finv_res= this->def_FINV;
+    this->settings->output_minv_res= this->def_MINV;
     if(settings->init_finv_const!=nullptr)
     {
         this->settings->output_finv= ComposeFields(settings->init_finv_const,this->def_FINV);

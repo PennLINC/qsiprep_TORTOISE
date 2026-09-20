@@ -1006,10 +1006,29 @@ void DRBUDDI_Diffeo::Process()
     CurrentFieldType::Pointer prev_finv=nullptr;
     CurrentFieldType::Pointer prev_minv=nullptr;
     std::vector<CurrentFieldType::Pointer> init_vfield;
+    if(init_finv_external)
+    {
+        #ifdef USECUDA
+            prev_finv=CurrentFieldType::New();
+            prev_finv->SetImageFromITK(init_finv_external);
+            prev_minv=CurrentFieldType::New();
+            prev_minv->SetImageFromITK(init_minv_external);
+        #else
+            prev_finv=init_finv_external;
+            prev_minv=init_minv_external;
+        #endif
+    }
 
     if(parser->GetInitialFINV()!="")
     {
         DisplacementFieldType::Pointer init_finv= readImageD<DisplacementFieldType>(parser->GetInitialFINV());
+        // Rotate the displacement vectors from the input world frame (orig_dir) into the
+        // axis-snapped internal frame the stages operate in -- the same transform
+        // SetInitialFieldsFromExternal applies to in-memory warm-start fields, and the inverse of
+        // what getUp2DownINV/getDefFINV apply on the way out. Identity when the acquisition grid is
+        // axis-aligned (new_dir==orig_dir); required for oblique data, whose vectors would otherwise
+        // point along the wrong world axes.
+        init_finv= ToInternalFrame(init_finv);
         #ifdef USECUDA
             prev_finv=CurrentFieldType::New();
             prev_finv->SetImageFromITK(init_finv);
@@ -1020,6 +1039,7 @@ void DRBUDDI_Diffeo::Process()
     if(parser->GetInitialMINV()!="")
     {
         DisplacementFieldType::Pointer init_minv= readImageD<DisplacementFieldType>(parser->GetInitialMINV());
+        init_minv= ToInternalFrame(init_minv);
         #ifdef USECUDA
             prev_minv=CurrentFieldType::New();
             prev_minv->SetImageFromITK(init_minv);
@@ -1033,6 +1053,19 @@ void DRBUDDI_Diffeo::Process()
         DRBUDDIStage_TVVF final_stage;
     #endif
 
+    // Optional: hold the external initial transform FIXED as a base across every SyN stage, so each
+    // stage learns only a residual on top of it (--DRBUDDI_keep_initial_transform_fixed). Default
+    // off, in which case the init is a warm start the multi-resolution pyramid low-passes and
+    // re-estimates -- fine for a coarse start, but it discards a fine-scale prior such as a GRE
+    // fieldmap. ext_* hold the pristine full-resolution external field; prev_res_* carry the
+    // residual forward. TVVF ignores this flag: it already composes the init as a fixed base.
+    bool keep_init_fixed= parser->getKeepInitialTransformFixed() && (prev_finv!=nullptr) && (prev_minv!=nullptr);
+    CurrentFieldType::Pointer ext_finv= prev_finv;
+    CurrentFieldType::Pointer ext_minv= prev_minv;
+    CurrentFieldType::Pointer prev_res_finv=nullptr;
+    CurrentFieldType::Pointer prev_res_minv=nullptr;
+    if(keep_init_fixed)
+        (*stream)<<"Keeping the initial transform fixed as a base field; stages learn a residual."<<std::endl;
 
 
     for(int st=0;st< stages.size();st++)
@@ -1077,8 +1110,17 @@ void DRBUDDI_Diffeo::Process()
             }
             else
             {
+                if(keep_init_fixed)
+                {
+                    // External prior as a fixed base at every stage; def_FINV starts from the
+                    // residual carried from the previous stage (null => zero on the first stage).
+                    stages[st].init_finv_const=ext_finv;
+                    stages[st].init_minv_const=ext_minv;
+                    stages[st].init_finv=prev_res_finv;
+                    stages[st].init_minv=prev_res_minv;
+                }
                 //if(st==stages.size()-1)
-                if(st>=27 && st==stages.size()-1)
+                else if(st>=27 && st==stages.size()-1)
                 {
                     stages[st].init_finv_const=prev_finv;
                     stages[st].init_minv_const=prev_minv;
@@ -1104,12 +1146,39 @@ void DRBUDDI_Diffeo::Process()
                 current_stage.PreprocessImagesAndFields();
                 current_stage.RunDRBUDDIStage();
 
-                prev_finv= stages[st].output_finv;
-                prev_minv= stages[st].output_minv;
+                if(keep_init_fixed)
+                {
+                    prev_res_finv= stages[st].output_finv_res;
+                    prev_res_minv= stages[st].output_minv_res;
+                    // keepfixed sets a resampled base + a residual copy on EVERY stage's settings;
+                    // on a large grid at full resolution those accumulate across stages and exhaust
+                    // GPU memory (the no-flag path sets them on one stage only). Release everything
+                    // this stage no longer needs -- only the carried residual (prev_res_*, taken
+                    // just above) and the LAST stage's composed output_finv (read after the loop)
+                    // must survive.
+                    stages[st].init_finv_const=nullptr; stages[st].init_minv_const=nullptr;
+                    stages[st].init_finv=nullptr;       stages[st].init_minv=nullptr;
+                    if(st != (int)stages.size()-1) { stages[st].output_finv=nullptr; stages[st].output_minv=nullptr; }
+                    if(st>0) { stages[st-1].output_finv_res=nullptr; stages[st-1].output_minv_res=nullptr; }
+                }
+                else
+                {
+                    prev_finv= stages[st].output_finv;
+                    prev_minv= stages[st].output_minv;
+                }
             }
 
         #else
-            if(st>=27)
+            if(keep_init_fixed)
+            {
+                // External prior as a fixed base at every stage; def_FINV starts from the residual
+                // carried from the previous stage (null => zero on the first stage).
+                stages[st].init_finv_const=ext_finv;
+                stages[st].init_minv_const=ext_minv;
+                stages[st].init_finv=prev_res_finv;
+                stages[st].init_minv=prev_res_minv;
+            }
+            else if(st>=27)
             {
                 stages[st].init_finv_const=prev_finv;
                 stages[st].init_minv_const=prev_minv;
@@ -1131,8 +1200,22 @@ void DRBUDDI_Diffeo::Process()
             current_stage.PreprocessImagesAndFields();
             current_stage.RunDRBUDDIStage();
 
-            prev_finv= stages[st].output_finv;
-            prev_minv= stages[st].output_minv;
+            if(keep_init_fixed)
+            {
+                prev_res_finv= stages[st].output_finv_res;
+                prev_res_minv= stages[st].output_minv_res;
+                // Release this stage's accumulated base/residual copies (see the CUDA branch above);
+                // keep only the carried residual and the last stage's composed output_finv.
+                stages[st].init_finv_const=nullptr; stages[st].init_minv_const=nullptr;
+                stages[st].init_finv=nullptr;       stages[st].init_minv=nullptr;
+                if(st != (int)stages.size()-1) { stages[st].output_finv=nullptr; stages[st].output_minv=nullptr; }
+                if(st>0) { stages[st-1].output_finv_res=nullptr; stages[st-1].output_minv_res=nullptr; }
+            }
+            else
+            {
+                prev_finv= stages[st].output_finv;
+                prev_minv= stages[st].output_minv;
+            }
         #endif
 
     } //for stages

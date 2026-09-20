@@ -39,6 +39,7 @@ public:
     float getEPIWorkingRes();
 
     std::string GetInitialMINV();
+    std::string GetEPIREGInitialField();
     std::string GetInitialFINV();
     int getNumberOfStages();
     std::vector<std::string>  getStageString(int st);
@@ -53,6 +54,7 @@ public:
     int GetNMetrics(int st);
     std::string GetMetricString(int st,int m);
     bool getEstimateLRPerIteration();
+    bool getKeepInitialTransformFixed();
 
     float getStructuralWeight();
     bool getDisableLastStage();

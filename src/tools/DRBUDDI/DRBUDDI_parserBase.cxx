@@ -186,6 +186,14 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
+        std::string description = std::string("Initial EPI displacement field for T2Wreg (EPIREG): an ITK displacement field in the b=0 world frame that pulls the distorted b=0 onto the corrected one, e.g. one derived from a GRE fieldmap. The registration starts from it and refines it against the structural image.")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "EPIREG_initial_field");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
         std::string description = std::string("Turn on rigid registration for HEAVILY distorted data? Computationally more expensive.")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "DRBUDDI_rigid_for_heavily_distorted");
@@ -265,6 +273,14 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         std::string description = std::string("Flag to estimate learning rate at every iteration. Makes DRBUDDI slower but better results. Boolean. Default:0")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "DRBUDDI_estimate_LR_per_iteration");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
+        std::string description = std::string("Hold the initial transform (DRBUDDI_initial_fixed/moving_transform, or the EPIREG_initial_field for T2Wreg) FIXED as a base field and let every registration stage learn only a residual on top of it. Default (0): the initial transform is a warm start that the multi-resolution SyN pyramid low-passes and re-estimates, so a fine-scale prior (e.g. a GRE fieldmap in the orbitofrontal region) does not survive. Set to 1 to keep it. Only affects the SyN method; TVVF always composes the initial field as a fixed base. Boolean. Default:0")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "DRBUDDI_keep_initial_transform_fixed");
         option->SetDescription( description );
         option->SetModule(6);
         this->AddOption( option );
@@ -543,6 +559,14 @@ std::string DRBUDDI_PARSERBASE::GetInitialMINV()
        return std::string("");
 
 }
+std::string DRBUDDI_PARSERBASE::GetEPIREGInitialField()
+{
+    OptionType::Pointer option = this->GetOption( "EPIREG_initial_field");
+   if(option->GetNumberOfFunctions())
+        return option->GetFunction(0)->GetName();
+   else
+       return std::string("");
+}
 /*
 bool DRBUDDI_PARSERBASE::getDisableInitRigid()
 {
@@ -577,6 +601,16 @@ bool DRBUDDI_PARSERBASE::getEstimateLRPerIteration()
 #else
         return 0;
 #endif
+}
+
+bool DRBUDDI_PARSERBASE::getKeepInitialTransformFixed()
+{
+    OptionType::Pointer option = this->GetOption( "DRBUDDI_keep_initial_transform_fixed");
+
+    if(option->GetNumberOfFunctions())
+         return (bool)(atoi(option->GetFunction(0)->GetName().c_str()));
+    else
+        return 0;
 }
 
 
