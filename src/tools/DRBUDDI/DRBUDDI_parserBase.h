@@ -54,6 +54,7 @@ public:
     int GetNMetrics(int st);
     std::string GetMetricString(int st,int m);
     bool getEstimateLRPerIteration();
+    bool getKeepInitialTransformFixed();
 
     float getStructuralWeight();
     bool getDisableLastStage();

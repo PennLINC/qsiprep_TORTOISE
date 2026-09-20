@@ -48,6 +48,22 @@ void DRBUDDIStage_TVVF::PreprocessImagesAndFields()
         }
     }
 
+    // An external initial field (init_finv_const / init_minv_const) is composed with the
+    // integrated velocity field in RunDRBUDDIStage (ComposeFields). It arrives at full resolution
+    // but the velocity field lives on this stage's (possibly downsampled) virtual grid, so it must
+    // be resampled onto the virtual grid first -- exactly as DRBUDDIStage::PreprocessImagesAndFields
+    // (SyN) already does. Without this, ComposeFields mixes a full-resolution field with a
+    // downsampled one and reads out of bounds on the GPU (illegal memory access,
+    // cuda_image_utilities.cu). `settings` is a per-stage copy (DRBUDDI_Diffeo::Process builds a
+    // fresh `new_stage` each iteration), so reassigning this pointer does not disturb the pristine
+    // full-resolution field that the final compose after the stage loop consumes.
+    if(this->settings->init_finv_const && this->settings->init_finv_const->sz.x != this->virtual_img->sz.x)
+    {
+        this->settings->init_finv_const= ResampleImage(this->settings->init_finv_const, this->virtual_img);
+        if(this->settings->init_minv_const)
+            this->settings->init_minv_const= ResampleImage(this->settings->init_minv_const, this->virtual_img);
+    }
+
     resampled_smoothed_up_images.resize(this->settings->metrics.size());
     resampled_smoothed_down_images.resize(this->settings->metrics.size());
     resampled_smoothed_str_images.resize(this->settings->metrics.size());

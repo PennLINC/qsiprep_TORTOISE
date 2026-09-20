@@ -278,6 +278,14 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
+        std::string description = std::string("Hold the initial transform (DRBUDDI_initial_fixed/moving_transform, or the EPIREG_initial_field for T2Wreg) FIXED as a base field and let every registration stage learn only a residual on top of it. Default (0): the initial transform is a warm start that the multi-resolution SyN pyramid low-passes and re-estimates, so a fine-scale prior (e.g. a GRE fieldmap in the orbitofrontal region) does not survive. Set to 1 to keep it. Only affects the SyN method; TVVF always composes the initial field as a fixed base. Boolean. Default:0")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "DRBUDDI_keep_initial_transform_fixed");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
         std::string description = std::string( "DRBUDDI runs many registration stages during correction. This tag sets all the parameters for a given stage. Each stage is executed in the order provided on the command line. Available metrics are:  MSJac, CC, CCSK. MSJac uses the b=0 images. CC uses FA images.  CCSK uses b=0 and the structural images. Which structural image to be used with CCSK is given with an index as:  CCSK\{str_id=1\}." ) ;
 
         OptionType::Pointer option = OptionType::New();
@@ -593,6 +601,16 @@ bool DRBUDDI_PARSERBASE::getEstimateLRPerIteration()
 #else
         return 0;
 #endif
+}
+
+bool DRBUDDI_PARSERBASE::getKeepInitialTransformFixed()
+{
+    OptionType::Pointer option = this->GetOption( "DRBUDDI_keep_initial_transform_fixed");
+
+    if(option->GetNumberOfFunctions())
+         return (bool)(atoi(option->GetFunction(0)->GetName().c_str()));
+    else
+        return 0;
 }
 
 
