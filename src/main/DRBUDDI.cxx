@@ -1041,8 +1041,8 @@ void DRBUDDI::Step1_RigidRegistration()
         RigidTransformType::Pointer rigid_trans=nullptr;
         (*stream)<<"R1: "<< params1<<std::endl;
         (*stream)<<"R2: "<< params2<<std::endl;
-        (*stream)<<"MI vs CC diff: "<< diff<<std::endl;
-        if(diff<0.005)
+        (*stream)<<"MI vs CC diff: "<< diff<<" (tolerance "<<parser->getStructuralRigidTolerance()<<")"<<std::endl;
+        if(diff<parser->getStructuralRigidTolerance())
             rigid_trans=rigid_trans2;
         else
         {
@@ -1120,7 +1120,9 @@ void DRBUDDI::Step1_RigidRegistration()
                     ImageType3D::Pointer str2= resample_3D_image(str_img,new_res,dummy,"Linear");
 
                     rigid_trans1=MultiStartRigidSearch(b02,  str2,new_metric_type);
-                    rigid_trans= RigidRegisterImagesEuler( initial_corrected_b0,  str_img, new_metric_type,parser->getRigidLR(),rigid_trans1);
+                    // The multistart result must go to in_trans; passed fifth it bound to the bool gd and the
+                    // refinement restarted from the moments initializer. Fixed upstream in 1ffb8f3.
+                    rigid_trans= RigidRegisterImagesEuler( initial_corrected_b0,  str_img, new_metric_type,parser->getRigidLR(),true,rigid_trans1);
                 }
             }
 

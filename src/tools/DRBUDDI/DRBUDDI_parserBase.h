@@ -33,6 +33,7 @@ public:
     //bool getStartWithDiffeo();
     std::string  getRigidMetricType();
     float  getRigidLR();
+    float  getStructuralRigidTolerance();
     int getDWIBvalue();
     float getSynthShellBval();
     int getSynthShellNdirs();
