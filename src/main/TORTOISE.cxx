@@ -1303,7 +1303,9 @@ void TORTOISE::AlignB0ToReorientation()
                             ImageType3D::Pointer str2= resample_3D_image(target_img,new_res,dummy,"Linear");
 
                             rigid_trans1=MultiStartRigidSearch(str2,b02,new_metric_type);
-                            b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,rigid_trans1);
+                            // Initial transform must go to in_trans, not the bool gd (same fix as DRBUDDI.cxx;
+                            // still unfixed upstream as of 1ffb8f3).
+                            b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,true,rigid_trans1);
                         }
                     }
                 }
@@ -1350,7 +1352,9 @@ void TORTOISE::AlignB0ToReorientation()
                             ImageType3D::Pointer str2= resample_3D_image(target_img,new_res,dummy,"Linear");
 
                             rigid_trans1=MultiStartRigidSearch(str2,b02,new_metric_type);
-                            b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,rigid_trans1);
+                            // Initial transform must go to in_trans, not the bool gd (same fix as DRBUDDI.cxx;
+                            // still unfixed upstream as of 1ffb8f3).
+                            b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,true,rigid_trans1);
                         }
                     }
                 }
@@ -1393,7 +1397,9 @@ void TORTOISE::AlignB0ToReorientation()
 
                 std::string new_metric_type="MI";
                 rigid_trans2=MultiStartRigidSearch(str2,b02,new_metric_type);
-                b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,rigid_trans2);
+                // Initial transform must go to in_trans, not the bool gd (same fix as DRBUDDI.cxx;
+                // still unfixed upstream as of 1ffb8f3).
+                b0_to_str_trans= RigidRegisterImagesEuler( target_img, b0_img, new_metric_type  ,parser->getRigidLR()/2.,true,rigid_trans2);
             }
         }
 
