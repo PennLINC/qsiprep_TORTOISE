@@ -1041,8 +1041,8 @@ void DRBUDDI::Step1_RigidRegistration()
         RigidTransformType::Pointer rigid_trans=nullptr;
         (*stream)<<"R1: "<< params1<<std::endl;
         (*stream)<<"R2: "<< params2<<std::endl;
-        (*stream)<<"MI vs CC diff: "<< diff<<std::endl;
-        if(diff<0.005)
+        (*stream)<<"MI vs CC diff: "<< diff<<" (tolerance "<<parser->getStructuralRigidTolerance()<<")"<<std::endl;
+        if(diff<parser->getStructuralRigidTolerance())
             rigid_trans=rigid_trans2;
         else
         {

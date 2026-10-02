@@ -238,6 +238,14 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
+        std::string description = std::string("The structural image is rigidly registered to the b=0 with both CC and MI. If the two results differ by less than this tolerance, the MI result is used directly; otherwise forward/backward consistency decides between them. The difference is the sum of squared rotation differences (radians) plus squared translation differences (mm) divided by 400. 0 always runs the consistency check. Float. Default:0.005")  ;
+        OptionType::Pointer option = OptionType::New();
+        option->SetLongName( "DRBUDDI_structural_rigid_tolerance");
+        option->SetDescription( description );
+        option->SetModule(6);
+        this->AddOption( option );
+    }
+    {
         std::string description = std::string("Up to which b-value should be used for DRBUDDI's tensor fitting. Default: 0 , meaning use all b-values")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "DRBUDDI_DWI_bval_tensor_fitting");
@@ -632,6 +640,14 @@ float  DRBUDDI_PARSERBASE::getRigidLR()
     else
         return 0.35;
 
+}
+float  DRBUDDI_PARSERBASE::getStructuralRigidTolerance()
+{
+    OptionType::Pointer option = this->GetOption( "DRBUDDI_structural_rigid_tolerance");
+    if(option->GetNumberOfFunctions())
+         return atof(option->GetFunction(0)->GetName().c_str());
+    else
+        return 0.005;
 }
 float  DRBUDDI_PARSERBASE::getSynthShellBval()
 {

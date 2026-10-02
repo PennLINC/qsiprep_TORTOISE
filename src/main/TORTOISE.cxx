@@ -1220,10 +1220,10 @@ void TORTOISE::AlignB0ToReorientation()
             RigidTransformType::Pointer rigid_trans=nullptr;
             (*stream)<<"R1: "<< params1<<std::endl;
             (*stream)<<"R2: "<< params2<<std::endl;
-            (*stream)<<"CC vs MI diff: "<< diff<<std::endl;
+            (*stream)<<"CC vs MI diff: "<< diff<<" (tolerance "<<parser->getStructuralRigidTolerance()<<")"<<std::endl;
 
 
-            if(diff<0.005)
+            if(diff<parser->getStructuralRigidTolerance())
                 b0_to_str_trans=rigid_trans2;
             else
             {
