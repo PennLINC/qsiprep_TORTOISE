@@ -965,7 +965,7 @@ void DRBUDDI_Diffeo::SetImagesForMetrics()
                             this->stages[st].metrics[m].str_img = PreprocessImage(this->structural_imgs[str_id2_CCJacS],0,1);
                             str_id2_CCJacS++;
                         }
-                        this->stages[st].metrics[m].weight=0.5;
+                        this->stages[st].metrics[m].weight=0.5*parser->getStructuralWeight();
                     }
                     else
                     {
