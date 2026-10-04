@@ -238,7 +238,7 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
-        std::string description = std::string("The structural image is rigidly registered to the b=0 with both CC and MI. If the two results differ by less than this tolerance, the MI result is used directly; otherwise forward/backward consistency decides between them. The difference is the sum of squared rotation differences (radians) plus squared translation differences (mm) divided by 400. 0 always runs the consistency check. Float. Default:0.005")  ;
+        std::string description = std::string("The structural image is rigidly registered to the b=0 with both CC and MI (DRBUDDI, and EPIREG for T2Wreg). If the two results differ by less than this tolerance, the MI result is used directly; otherwise forward/backward consistency decides between them. The difference is the sum of squared rotation differences (radians) plus squared translation differences (mm) divided by 400. 0 always runs the consistency check. Float. Default:0.005")  ;
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "DRBUDDI_structural_rigid_tolerance");
         option->SetDescription( description );

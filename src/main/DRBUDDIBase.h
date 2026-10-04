@@ -52,6 +52,17 @@ protected:            //Subfunctions the main processing functions use
     ImageType3D::Pointer JacobianTransformImage(ImageType3D::Pointer img,DisplacementFieldType::Pointer field,ImageType3D::Pointer ref_img);
     InternalMatrixType ComputeJacobianAtIndex(DisplacementFieldType::Pointer disp_field, DisplacementFieldType::IndexType index);
     double  ComputeJacobianDetAtIndex(DisplacementFieldType::Pointer disp_field, DisplacementFieldType::IndexType index, int phase);
+    ImageType3D::Pointer PreprocessImage(  ImageType3D::ConstPointer  inputImage,
+                                         ImageType3D::PixelType lowerScaleValue,
+                                         ImageType3D::PixelType upperScaleValue,
+                                         float winsorizeLowerQuantile, float winsorizeUpperQuantile,
+                                         ImageType3D::ConstPointer histogramMatchSourceImage=nullptr );
+
+    // Rigidly register a structural image to a b=0 (b0_img fixed, str_img_orig moving). CC and MI are
+    // both run; unless they agree within --DRBUDDI_structural_rigid_tolerance, the metric whose
+    // forward and backward registrations agree is refined, or a multistart search runs. Shared by
+    // DRBUDDI and EPIREG so every structural-to-b=0 rigid gets the same checks.
+    RigidTransformType::Pointer RegisterStructuralToB0(ImageType3D::Pointer b0_img, ImageType3D::Pointer str_img_orig);
 
 
 public:                    //Main processing functions
