@@ -41,11 +41,6 @@ private:                    //Main processing functions
     void Step3_WriteOutput();
 
     DisplacementFieldType::Pointer CompositeToDispField(CompositeTransformType::Pointer comp_trans, ImageType3D::Pointer ref_img);
-    ImageType3D::Pointer PreprocessImage(  ImageType3D::ConstPointer  inputImage,
-                                         ImageType3D::PixelType lowerScaleValue,
-                                         ImageType3D::PixelType upperScaleValue,
-                                         float winsorizeLowerQuantile, float winsorizeUpperQuantile,
-                                         ImageType3D::ConstPointer histogramMatchSourceImage=nullptr );
 
 
 

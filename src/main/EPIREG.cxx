@@ -106,6 +106,30 @@ void EPIREG::Step1_RigidRegistration()
 
 
 
+    // Register the structural to the least distorted b=0 available: the quad b=0, unwarped by
+    // --EPIREG_initial_field when one is given (e.g. from a GRE field map). A rigid fit to the
+    // distorted b=0 is biased by the distortion; on a TRXScan fixture with known truth it placed
+    // the T2w about 3 degrees off.
+    ImageType3D::Pointer str_target= this->b0_up_quad;
+    std::string init_field_name = parser->GetEPIREGInitialField();
+    if(init_field_name!="")
+    {
+        DisplacementFieldType::Pointer init_field= readImageD<DisplacementFieldType>(init_field_name);
+        DisplacementFieldTransformType::Pointer init_trans= DisplacementFieldTransformType::New();
+        init_trans->SetDisplacementField(init_field);
+
+        using ResampleImageFilterType= itk::ResampleImageFilter<ImageType3D, ImageType3D> ;
+        ResampleImageFilterType::Pointer resampleFilter = ResampleImageFilterType::New();
+        resampleFilter->SetOutputParametersFromImage(this->b0_up_quad);
+        resampleFilter->SetInput(this->b0_up_quad);
+        resampleFilter->SetTransform(init_trans);
+        resampleFilter->SetDefaultPixelValue(0);
+        resampleFilter->Update();
+        str_target= resampleFilter->GetOutput();
+        (*stream)<<"Registering the structural to the b=0 unwarped by "<<init_field_name<<std::endl;
+    }
+    writeImageD<ImageType3D>(str_target,proc_folder+"/b0_str_registration_target.nii");
+
     // and finally rigid register all structural images to the kind of corrected b0 image
     int Nstr= parser->getNumberOfStructurals();
 
@@ -114,7 +138,10 @@ void EPIREG::Step1_RigidRegistration()
         (*stream)<<"Rigidly registering structural image id: " <<str<<" to b0_up quad..."<<std::endl;
 
         ImageType3D::Pointer str_img = readImageD<ImageType3D>(parser->getStructuralNames(str));
-        RigidTransformType::Pointer rigid_trans= RigidRegisterImagesEuler( this->b0_up_quad,  str_img,parser->getRigidMetricType(),parser->getRigidLR());
+        // The same CC/MI comparison and forward/backward consistency check as DRBUDDI's structural
+        // rigid, instead of a single unchecked registration.
+        RigidTransformType::Pointer rigid_trans= RegisterStructuralToB0(str_target, str_img);
+        (*stream)<<"Rigid transformation: " << rigid_trans->GetParameters()<<std::endl;
 
         {
             using ResampleImageFilterType = itk::ResampleImageFilter<ImageType3D, ImageType3D> ;
