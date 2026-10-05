@@ -62,6 +62,10 @@ void DRBUDDI_Diffeo::SetUpStages()
                 {
                     metric.SetMetricType( DRBUDDIMetricEnumeration::CCJacS);
                 }
+                if(metric_string.find("CCJacSOne")!=std::string::npos)
+                {
+                    metric.SetMetricType( DRBUDDIMetricEnumeration::CCJacSOne);
+                }
 
                 this->stages[st].metrics.push_back(metric);
 
@@ -893,6 +897,7 @@ void DRBUDDI_Diffeo::SetImagesForMetrics()
         {
             int str_id2_CCJacS=0;
             int str_id2_CCSK=0;
+            int str_id2_CCJacSOne=0;
             redo=false;
             int Nmetrics = this->stages[st].metrics.size();
 
@@ -966,6 +971,35 @@ void DRBUDDI_Diffeo::SetImagesForMetrics()
                             str_id2_CCJacS++;
                         }
                         this->stages[st].metrics[m].weight=0.5*parser->getStructuralWeight();
+                    }
+                    else
+                    {
+                        this->stages[st].metrics.erase(this->stages[st].metrics.begin()+m);
+                        redo=true;
+                        break;
+                    }
+                }
+
+                if(this->stages[st].metrics[m].MetricType == DRBUDDIMetricEnumeration::CCJacSOne)
+                {
+                    if(Nstr>0)
+                    {
+                        this->stages[st].metrics[m].up_img= preprocessed_b0_up;
+                        this->stages[st].metrics[m].down_img= preprocessed_b0_down;
+
+                        std::string metric_string = parser->GetMetricString(st,m);
+                        if(metric_string !="")
+                        {
+                            std::string sub_string = metric_string.substr(metric_string.find("str_id=")+7,metric_string.rfind("}")-7-metric_string.find("str_id="));
+                            int str_id = atoi(sub_string.c_str());
+
+                            this->stages[st].metrics[m].str_img = PreprocessImage(this->structural_imgs[str_id],0,1);
+                        }
+                        else
+                        {
+                            this->stages[st].metrics[m].str_img = PreprocessImage(this->structural_imgs[str_id2_CCJacSOne],0,1);
+                            str_id2_CCJacSOne++;
+                        }
                     }
                     else
                     {

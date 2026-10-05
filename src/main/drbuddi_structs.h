@@ -15,7 +15,8 @@ enum DRBUDDIMetricEnumeration
     CCJacS=2,
     MSJac = 3,
     CC=4,
-    IllegalMetric = 5
+    IllegalMetric = 5,
+    CCJacSOne = 6
 };
 
 class DRBUDDIMetric
@@ -35,6 +36,8 @@ public:
             metric_name="MSJac";
         if(type==DRBUDDIMetricEnumeration::CC)
             metric_name="CC";
+        if(type==DRBUDDIMetricEnumeration::CCJacSOne)
+            metric_name="CCJacSOne";
     }
 
     #ifdef USECUDA

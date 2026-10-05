@@ -837,11 +837,136 @@ float ComputeMetric_CCJacSSingle(const ImageType3D::Pointer up_img, const ImageT
 }
 
 
+// CCJacS for a single phase-encoding direction: the Jacobian-modulated b=0 against the
+// structural, with no second blip. EPIREG hands the engine the same b=0 on both sides, so the
+// two-sided metric's up and down terms cancel there; this one only moves the b=0.
+float ComputeMetric_CCJacSOneSided(const ImageType3D::Pointer up_img, const ImageType3D::Pointer str_img,
+                          const DisplacementFieldType::Pointer def_FINV,
+                          DisplacementFieldType::Pointer &updateFieldF,
+                          vnl_vector<double> phase_vector,itk::GaussianOperator<float,3> &current_Gaussian_operator)
+{
+    updateFieldF = DisplacementFieldType::New();
+    updateFieldF->SetRegions(def_FINV->GetLargestPossibleRegion());
+    updateFieldF->SetDirection(def_FINV->GetDirection());
+    updateFieldF->SetOrigin(def_FINV->GetOrigin());
+    updateFieldF->SetSpacing(def_FINV->GetSpacing());
+    updateFieldF->Allocate();
 
+    int phase=0;
+    if( (fabs(phase_vector[1]) > fabs(phase_vector[0])) && (fabs(phase_vector[1]) > fabs(phase_vector[2])))
+        phase=1;
+    if( (fabs(phase_vector[2]) > fabs(phase_vector[0])) && (fabs(phase_vector[2]) > fabs(phase_vector[1])))
+        phase=2;
 
+    vnl_matrix_fixed<double,3,3> dir = up_img->GetDirection().GetVnlMatrix();
+    vnl_vector_fixed<double,3> new_phase_vector = dir*phase_vector;
+    int phase_xyz;
+    if( (fabs(new_phase_vector[0])>fabs(new_phase_vector[1])) && (fabs(new_phase_vector[0])>fabs(new_phase_vector[2])))
+        phase_xyz=0;
+    else if( (fabs(new_phase_vector[1])>fabs(new_phase_vector[0])) && (fabs(new_phase_vector[1])>fabs(new_phase_vector[2])))
+        phase_xyz=1;
+    else phase_xyz=2;
 
+    ImageType3D::SizeType imsize=up_img->GetLargestPossibleRegion().GetSize();
 
+    ImageType3D::Pointer m_MetricImage= ImageType3D::New();
+    m_MetricImage->SetRegions(up_img->GetLargestPossibleRegion());
+    m_MetricImage->Allocate();
+    m_MetricImage->SetSpacing(up_img->GetSpacing());
+    m_MetricImage->SetOrigin(up_img->GetOrigin());
+    m_MetricImage->SetDirection(up_img->GetDirection());
+    m_MetricImage->FillBuffer(0);
 
+    ImageType3D::Pointer updet_img= ImageType3D::New();
+    updet_img->SetRegions(up_img->GetLargestPossibleRegion());
+    updet_img->Allocate();
+    updet_img->SetSpacing(up_img->GetSpacing());
+    updet_img->SetOrigin(up_img->GetOrigin());
+    updet_img->SetDirection(up_img->GetDirection());
 
+    DisplacementFieldType::Pointer upgrad_img= DisplacementFieldType::New();
+    upgrad_img->SetRegions(up_img->GetLargestPossibleRegion());
+    upgrad_img->Allocate();
+    upgrad_img->SetSpacing(up_img->GetSpacing());
+    upgrad_img->SetOrigin(up_img->GetOrigin());
+    upgrad_img->SetDirection(up_img->GetDirection());
+
+    StructImageType::Pointer upfindiff_img= StructImageType::New();
+    upfindiff_img->SetRegions(up_img->GetLargestPossibleRegion());
+    upfindiff_img->Allocate();
+    upfindiff_img->SetSpacing(up_img->GetSpacing());
+    upfindiff_img->SetOrigin(up_img->GetOrigin());
+    upfindiff_img->SetDirection(up_img->GetDirection());
+
+    #pragma omp parallel for collapse(2)
+    for( int k=0; k<(int)imsize[2];k++)
+    {
+        for(unsigned int j=0; j<imsize[1];j++)
+        {
+            ImageType3D::IndexType index;
+            index[2]=k;
+            index[1]=j;
+            for(unsigned int i=0; i<imsize[0];i++)
+            {
+                index[0]=i;
+                upgrad_img->SetPixel(index,ComputeImageGradient( up_img, index));
+                double det2= ComputeSingleJacobianMatrixAtIndex(def_FINV,index,1,phase,phase_xyz)+1;
+                if(det2 <=0)
+                    det2=1E-5;
+                float det= mf(det2);
+                updet_img->SetPixel(index,det*up_img->GetPixel(index));
+            }
+        }
+    }
+
+    #pragma omp parallel for collapse(2)
+    for( int k=0; k<(int)imsize[2];k++)
+    {
+        for(unsigned int j=0; j<imsize[1];j++)
+        {
+            ImageType3D::IndexType index;
+            index[2]=k;
+            index[1]=j;
+            for(unsigned int i=0; i<imsize[0];i++)
+            {
+                index[0]=i;
+                upfindiff_img->SetPixel(index,ComputeFinDiff(index,updet_img,str_img));
+            }
+        }
+    }
+
+    #pragma omp parallel for
+    for( int k=0; k<(int)imsize[2];k++)
+    {
+        for(unsigned int j=0; j<imsize[1];j++)
+        {
+            ImageType3D::IndexType index;
+            index[2]=k;
+            index[1]=j;
+            DisplacementFieldType::PixelType updateF;
+            for(unsigned int i=0; i<imsize[0];i++)
+            {
+                index[0]=i;
+                float mv1= ComputeUpdateCCJacS(index,
+                                               up_img,  upgrad_img,
+                                               upfindiff_img,
+                                               def_FINV,
+                                               current_Gaussian_operator,
+                                               updateF,
+                                               phase,phase_xyz,new_phase_vector);
+                updateFieldF->SetPixel(index,updateF);
+                m_MetricImage->SetPixel(index,mv1);
+            }
+        }
+    }
+
+    double value = 0;
+    typedef itk::ImageRegionIterator<ImageType3D>  ItType;
+    ItType it(m_MetricImage,m_MetricImage->GetRequestedRegion());
+    for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+        value+= it.Get();
+    value=value/(imsize[0]*imsize[1]*imsize[2]);
+    return value;
+}
 
 #endif

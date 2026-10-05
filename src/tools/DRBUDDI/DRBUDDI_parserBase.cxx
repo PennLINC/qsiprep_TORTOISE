@@ -294,7 +294,7 @@ void DRBUDDI_PARSERBASE::InitializeCommandLineOptions()
         this->AddOption( option );
     }
     {
-        std::string description = std::string( "DRBUDDI runs many registration stages during correction. This tag sets all the parameters for a given stage. Each stage is executed in the order provided on the command line. Available metrics are:  MSJac, CC, CCSK. MSJac uses the b=0 images. CC uses FA images.  CCSK uses b=0 and the structural images. Which structural image to be used with CCSK is given with an index as:  CCSK\{str_id=1\}. In TORTOISEProcess with --epi T2Wreg, the same stages replace EPIREG's built-in schedule (six CC stages on the b=0 and the structural)." ) ;
+        std::string description = std::string( "DRBUDDI runs many registration stages during correction. This tag sets all the parameters for a given stage. Each stage is executed in the order provided on the command line. Available metrics are:  MSJac, CC, CCSK. MSJac uses the b=0 images. CC uses FA images.  CCSK uses b=0 and the structural images. Which structural image to be used with CCSK is given with an index as:  CCSK\{str_id=1\}. CCJacSOne\{str_id=0\} is CCJacS for a single phase-encoding direction (the Jacobian-modulated b=0 against the structural, the structural held still), for --epi T2Wreg; CPU build only. In TORTOISEProcess with --epi T2Wreg, the same stages replace EPIREG's built-in schedule (six CC stages on the b=0 and the structural)." ) ;
 
         OptionType::Pointer option = OptionType::New();
         option->SetLongName( "DRBUDDI_stage" );

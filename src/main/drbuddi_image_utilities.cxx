@@ -260,6 +260,9 @@ void ScaleUpdateField(DisplacementFieldType::Pointer  field,float scale_factor)
         if(mags[k]>mxnrm)
             mxnrm=mags[k];
 
+    // A zero field (one side of a one-sided metric) stays zero instead of becoming NaN.
+    if(mxnrm<=0)
+        return;
 
     #pragma omp parallel for
     for(int k=0;k<sz[2];k++)

@@ -640,6 +640,24 @@ void DRBUDDIStage::RunDRBUDDIStage()
             {
                 metric_value = ComputeMetric_CC(warped_up_img,warped_down_img, updateFieldF_temp,updateFieldM_temp );
             }
+            if(this->settings->metrics[met].MetricType== DRBUDDIMetricEnumeration::CCJacSOne)
+            {
+                #ifdef USECUDA
+                    std::cerr<<"The CCJacSOne metric is only implemented in the CPU build."<<std::endl;
+                    exit(EXIT_FAILURE);
+                #else
+                    metric_value = ComputeMetric_CCJacSOneSided(warped_up_img, this->resampled_smoothed_str_images[met],
+                                                                 tot_finv, updateFieldF_temp,
+                                                                 this->up_phase_vector, Goper );
+                    // The structural does not move: a zero update on the down side.
+                    updateFieldM_temp = DisplacementFieldType::New();
+                    updateFieldM_temp->SetRegions(updateFieldF_temp->GetLargestPossibleRegion());
+                    updateFieldM_temp->CopyInformation(updateFieldF_temp);
+                    updateFieldM_temp->Allocate();
+                    DisplacementFieldType::PixelType zero; zero.Fill(0);
+                    updateFieldM_temp->FillBuffer(zero);
+                #endif
+            }
             metric_values[met]=metric_value;
             all_ConvergenceMonitoring[met]->AddEnergyValue( metric_value );
 
