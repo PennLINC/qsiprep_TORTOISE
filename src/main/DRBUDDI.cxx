@@ -852,19 +852,16 @@ void DRBUDDI::Step1_RigidRegistration()
     RigidTransformType::Pointer down_to_up_rigid_trans=nullptr;
     ImageType3D::Pointer initial_corrected_b0=this->b0_up_quad;
 
-    /*
     if(parser->getDisableInitRigid())
     {
+        (*stream)<<"--DRBUDDI_disable_initial_rigid: the blip-down b=0 is used as given, without the rigid + diffeomorphic + rigid registration to the blip-up b=0"<<std::endl;
         down_to_up_rigid_trans=RigidTransformType::New();
         down_to_up_rigid_trans->SetIdentity();
     }
     else
     {
-        //down_to_up_rigid_trans = RigidDiffeoRigidRegisterB0DownToB0Up(this->b0_up_quad,this->b0_down,"CC",initial_corrected_b0);
         down_to_up_rigid_trans = RigidDiffeoRigidRegisterB0DownToB0Up(this->b0_up_quad,this->b0_down,"MI",initial_corrected_b0);
     }
-*/
-    down_to_up_rigid_trans = RigidDiffeoRigidRegisterB0DownToB0Up(this->b0_up_quad,this->b0_down,"MI",initial_corrected_b0);
 
     writeImageD<ImageType3D>(initial_corrected_b0,proc_folder+"/b0_str_registration_target.nii");
 

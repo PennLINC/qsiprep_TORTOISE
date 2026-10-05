@@ -138,10 +138,21 @@ void EPIREG::Step1_RigidRegistration()
         (*stream)<<"Rigidly registering structural image id: " <<str<<" to b0_up quad..."<<std::endl;
 
         ImageType3D::Pointer str_img = readImageD<ImageType3D>(parser->getStructuralNames(str));
-        // The same CC/MI comparison and forward/backward consistency check as DRBUDDI's structural
-        // rigid, instead of a single unchecked registration.
-        RigidTransformType::Pointer rigid_trans= RegisterStructuralToB0(str_target, str_img);
-        (*stream)<<"Rigid transformation: " << rigid_trans->GetParameters()<<std::endl;
+        RigidTransformType::Pointer rigid_trans;
+        if(parser->getDisableInitRigid())
+        {
+            // The caller has already placed the structural on the b=0; only resample it onto the quad grid.
+            (*stream)<<"--DRBUDDI_disable_initial_rigid: structural image used at the given pose"<<std::endl;
+            rigid_trans= RigidTransformType::New();
+            rigid_trans->SetIdentity();
+        }
+        else
+        {
+            // The same CC/MI comparison and forward/backward consistency check as DRBUDDI's structural
+            // rigid, instead of a single unchecked registration.
+            rigid_trans= RegisterStructuralToB0(str_target, str_img);
+            (*stream)<<"Rigid transformation: " << rigid_trans->GetParameters()<<std::endl;
+        }
 
         {
             using ResampleImageFilterType = itk::ResampleImageFilter<ImageType3D, ImageType3D> ;
@@ -304,7 +315,10 @@ void EPIREG::Step2_DiffeoRegistration()
     myEPIREG_processor->SetUpPEVector(phase_vector);
     myEPIREG_processor->SetDownPEVector(phase_vector);
     myEPIREG_processor->SetParser(parser);
-    myEPIREG_processor->SetStagesFromExternal(stages);
+    if(parser->getNumberOfStages()==0)
+        myEPIREG_processor->SetStagesFromExternal(stages);
+    else
+        (*stream)<<"Using the "<<parser->getNumberOfStages()<<" --DRBUDDI_stage settings for the EPI registration instead of the built-in schedule"<<std::endl;
     std::string init_field_name = parser->GetEPIREGInitialField();
     if(init_field_name!="")
     {

@@ -29,7 +29,7 @@ public:
 
     bool getRigidForHeavilyDistorted();
 
-    //bool getDisableInitRigid();
+    bool getDisableInitRigid();
     //bool getStartWithDiffeo();
     std::string  getRigidMetricType();
     float  getRigidLR();
