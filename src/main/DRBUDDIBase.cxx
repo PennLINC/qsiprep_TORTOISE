@@ -216,6 +216,9 @@ ImageType3D::Pointer DRBUDDIBase::JacobianTransformImage(ImageType3D::Pointer im
                     for(int i=-2;i<=2;i++)
                     {
                         tind[0]=index[0]+i;
+                        // ComputeJacobianDetAtIndex bounds-checks the phase axis only.
+                        if(!field->GetLargestPossibleRegion().IsInside(tind))
+                            continue;
                         double det2=  ComputeJacobianDetAtIndex(field,tind,phase_id);
                         if(det2>0)
                         {
